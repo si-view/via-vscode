@@ -39,7 +39,7 @@
       },
       {
         "command": "via.runSelection",
-        "title": "VIA: Run Selection or Current Line",
+        "title": "VIA: Run Selection or Paragraph",
         "category": "VIA"
       }
     ],
@@ -109,6 +109,7 @@
     ]
   },
   "scripts": {
+    "vscode:prepublish": "npm run build",
     "build": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "lint": "tsc --noEmit -p ./",
