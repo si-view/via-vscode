@@ -5,6 +5,14 @@
   "version": "0.0.1",
   "publisher": "si-view",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/si-view/via-vscode.git"
+  },
+  "bugs": {
+    "url": "https://github.com/si-view/via-vscode/issues"
+  },
+  "homepage": "https://github.com/si-view/via-vscode#readme",
   "engines": {
     "vscode": "^1.85.0"
   },
