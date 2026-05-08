@@ -1,0 +1,129 @@
+{
+  "name": "via-vscode",
+  "displayName": "VIA Runner",
+  "description": "Run Virtuoso .il files and code snippets through the via CLI from VS Code.",
+  "version": "0.0.1",
+  "publisher": "si-view",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:skill",
+    "onCommand:via.configureSession",
+    "onCommand:via.startKernel",
+    "onCommand:via.runFile",
+    "onCommand:via.runSelection"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "via.configureSession",
+        "title": "VIA: Configure Session",
+        "category": "VIA"
+      },
+      {
+        "command": "via.startKernel",
+        "title": "VIA: Start Kernel",
+        "category": "VIA"
+      },
+      {
+        "command": "via.runFile",
+        "title": "VIA: Run Current File",
+        "category": "VIA"
+      },
+      {
+        "command": "via.runSelection",
+        "title": "VIA: Run Selection or Current Line",
+        "category": "VIA"
+      }
+    ],
+    "configuration": {
+      "title": "VIA Runner",
+      "properties": {
+        "via.commandPath": {
+          "type": "string",
+          "default": "via",
+          "description": "Path to the via executable."
+        },
+        "via.defaultWorkspace": {
+          "type": "string",
+          "default": "",
+          "description": "Default Virtuoso workspace path used when starting a via kernel."
+        },
+        "via.defaultInstanceName": {
+          "type": "string",
+          "default": "vscode",
+          "description": "Default via instance name."
+        },
+        "via.autoStartKernel": {
+          "type": "boolean",
+          "default": true,
+          "description": "Start the via kernel automatically before running a file or selection when needed."
+        }
+      }
+    },
+    "menus": {
+      "editor/title": [
+        {
+          "command": "via.runFile",
+          "when": "resourceExtname == .il",
+          "group": "navigation@10"
+        },
+        {
+          "command": "via.runSelection",
+          "when": "resourceExtname == .il",
+          "group": "navigation@11"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "via.configureSession"
+        },
+        {
+          "command": "via.startKernel"
+        },
+        {
+          "command": "via.runFile"
+        },
+        {
+          "command": "via.runSelection"
+        }
+      ]
+    },
+    "languages": [
+      {
+        "id": "skill",
+        "aliases": [
+          "Skill"
+        ],
+        "extensions": [
+          ".il"
+        ]
+      }
+    ]
+  },
+  "scripts": {
+    "build": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "tsc --noEmit -p ./",
+    "test": "npm run lint"
+  },
+  "keywords": [
+    "via",
+    "virtuoso",
+    "skill",
+    "ic"
+  ],
+  "devDependencies": {
+    "@types/node": "^25.6.2",
+    "@types/vscode": "^1.118.0",
+    "@vscode/test-electron": "^2.5.2",
+    "typescript": "^6.0.3"
+  }
+}
