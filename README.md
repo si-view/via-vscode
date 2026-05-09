@@ -5,10 +5,12 @@ VIA Runner is a VS Code extension for running Virtuoso SKILL `.il` files and par
 ## Features
 
 - Run the current `.il` file with `via send --load`.
-- Run the current selection, or the paragraph around the cursor, with `via send --eval`.
+- Run the current selection first, or the paragraph around the cursor when nothing is selected, with `via send --eval`.
 - Start the backing Virtuoso kernel with `via start`.
+- Select or create kernels from a Jupyter-style status bar dropdown.
 - Configure and persist a `via` instance name plus Virtuoso workspace path per VS Code workspace.
-- Stay inside native VS Code UI using the command palette, editor title actions, CodeLens, notifications, and status bar.
+- Show execution commands and returned output in the native `VIA Runner` output channel.
+- Stay inside native VS Code UI using the command palette, icon-based editor title actions, CodeLens, notifications, output, and status bar.
 
 ## Requirements
 
@@ -26,17 +28,20 @@ This works well with Remote SSH or other remote Linux extension hosts when the l
    - the `via` instance name
    - the Virtuoso workspace path used by `via start --workspace`
 4. Use one of the built-in commands:
+   - click the status bar kernel selector to choose an existing kernel or create a new one
    - `VIA: Start Kernel`
    - `VIA: Run Current File`
    - `VIA: Run Selection or Paragraph`
 
 When `via.autoStartKernel` is enabled, file or paragraph execution starts the kernel automatically if needed.
+Each execution also reveals the `VIA Runner` output channel so the returned command output is visible immediately.
 
 ## Settings
 
 - `via.commandPath`: path to the `via` executable
 - `via.defaultWorkspace`: default Virtuoso workspace path
 - `via.defaultInstanceName`: default `via` instance name
+- `via.knownKernels`: optional preset kernel list for the selector
 - `via.autoStartKernel`: auto-start the kernel before running code
 
 ## Development

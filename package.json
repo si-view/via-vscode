@@ -23,6 +23,8 @@
   "activationEvents": [
     "onLanguage:skill",
     "onCommand:via.configureSession",
+    "onCommand:via.selectKernel",
+    "onCommand:via.createKernel",
     "onCommand:via.startKernel",
     "onCommand:via.runFile",
     "onCommand:via.runSelection"
@@ -33,22 +35,38 @@
       {
         "command": "via.configureSession",
         "title": "VIA: Configure Session",
-        "category": "VIA"
+        "category": "VIA",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "via.selectKernel",
+        "title": "VIA: Select Kernel",
+        "category": "VIA",
+        "icon": "$(server-process)"
+      },
+      {
+        "command": "via.createKernel",
+        "title": "VIA: New Kernel",
+        "category": "VIA",
+        "icon": "$(add)"
       },
       {
         "command": "via.startKernel",
         "title": "VIA: Start Kernel",
-        "category": "VIA"
+        "category": "VIA",
+        "icon": "$(debug-start)"
       },
       {
         "command": "via.runFile",
         "title": "VIA: Run Current File",
-        "category": "VIA"
+        "category": "VIA",
+        "icon": "$(play)"
       },
       {
         "command": "via.runSelection",
         "title": "VIA: Run Selection or Paragraph",
-        "category": "VIA"
+        "category": "VIA",
+        "icon": "$(run-all)"
       }
     ],
     "configuration": {
@@ -69,6 +87,22 @@
           "default": "vscode",
           "description": "Default via instance name."
         },
+        "via.knownKernels": {
+          "type": "array",
+          "default": [],
+          "description": "Known via kernel presets shown in the kernel selector.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "instanceName": {
+                "type": "string"
+              },
+              "workspacePath": {
+                "type": "string"
+              }
+            }
+          }
+        },
         "via.autoStartKernel": {
           "type": "boolean",
           "default": true,
@@ -78,6 +112,11 @@
     },
     "menus": {
       "editor/title": [
+        {
+          "command": "via.selectKernel",
+          "when": "resourceExtname == .il",
+          "group": "navigation@9"
+        },
         {
           "command": "via.runFile",
           "when": "resourceExtname == .il",
@@ -95,6 +134,12 @@
         },
         {
           "command": "via.startKernel"
+        },
+        {
+          "command": "via.selectKernel"
+        },
+        {
+          "command": "via.createKernel"
         },
         {
           "command": "via.runFile"

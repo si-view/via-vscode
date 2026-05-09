@@ -20,15 +20,20 @@ type ViaSession = {
   workspacePath: string;
 };
 
+type ListedKernel = ViaSession & {
+  status?: string;
+};
+
 const SESSION_NAME_KEY = "via.instanceName";
 const WORKSPACE_PATH_KEY = "via.workspacePath";
+const KNOWN_KERNELS_KEY = "via.knownKernels";
 
 export class ViaRunner implements vscode.Disposable {
   private readonly output = vscode.window.createOutputChannel("VIA Runner");
   private readonly statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
 
   constructor(private readonly context: vscode.ExtensionContext) {
-    this.statusBar.command = "via.configureSession";
+    this.statusBar.command = "via.selectKernel";
     this.context.subscriptions.push(this.output, this.statusBar);
     this.updateStatusBar();
   }
@@ -40,41 +45,92 @@ export class ViaRunner implements vscode.Disposable {
 
   async configureSession(): Promise<void> {
     this.assertLinuxHost();
+    await this.promptForKernelSession(this.readSession());
+  }
+
+  async selectKernel(): Promise<void> {
+    this.assertLinuxHost();
 
     const current = this.readSession();
-    const defaultName = current.instanceName || this.getConfig<string>("defaultInstanceName") || "vscode";
-    const instanceName = await vscode.window.showInputBox({
-      title: "VIA Instance Name",
-      prompt: "Name of the via-managed Virtuoso instance",
-      value: defaultName,
+    const running = await this.listKernels();
+    const known = this.readKnownKernels();
+    const merged = dedupeListedKernels(current, running, known);
+
+    const picks: vscode.QuickPickItem[] = merged.map((item) => ({
+      label: item.instanceName === current.instanceName ? `$(check) ${item.instanceName}` : item.instanceName,
+      description: item.status ? `status: ${item.status}` : undefined,
+      detail: item.workspacePath || "No workspace configured",
+    }));
+
+    picks.push(
+      {
+        label: "$(add) New Kernel...",
+        detail: "Create a new via kernel preset and select it",
+      },
+      {
+        label: "$(gear) Configure Current Kernel...",
+        detail: current.instanceName || current.workspacePath
+          ? `Edit ${current.instanceName || "current"}`
+          : "Set the current kernel name and workspace",
+      },
+    );
+
+    const picked = await vscode.window.showQuickPick(picks, {
+      title: "Select VIA Kernel",
+      placeHolder: "Choose a known kernel or create a new one",
       ignoreFocusOut: true,
-      validateInput: (value) => (value.trim().length === 0 ? "Instance name is required." : undefined),
     });
 
-    if (!instanceName) {
+    if (!picked) {
       return;
     }
 
-    const defaultWorkspace = current.workspacePath || this.getConfig<string>("defaultWorkspace");
-    const defaultUri = defaultWorkspace ? vscode.Uri.file(defaultWorkspace) : undefined;
-    const picked = await vscode.window.showOpenDialog({
-      title: "Select Virtuoso Workspace",
-      defaultUri,
-      canSelectFiles: false,
-      canSelectFolders: true,
-      canSelectMany: false,
-      openLabel: "Use Workspace",
-    });
-
-    if (!picked || picked.length === 0) {
+    if (picked.label.startsWith("$(add)")) {
+      await this.createKernel();
       return;
     }
 
-    await this.context.workspaceState.update(SESSION_NAME_KEY, instanceName.trim());
-    await this.context.workspaceState.update(WORKSPACE_PATH_KEY, picked[0].fsPath);
+    if (picked.label.startsWith("$(gear)")) {
+      await this.configureSession();
+      return;
+    }
 
-    this.updateStatusBar();
-    void vscode.window.showInformationMessage(`VIA session set to ${instanceName.trim()}.`);
+    const selected = merged.find((item) => item.instanceName === stripCodiconPrefix(picked.label));
+    if (!selected) {
+      return;
+    }
+
+    await this.setCurrentSession(selected);
+    void vscode.window.showInformationMessage(`VIA kernel set to ${selected.instanceName}.`);
+  }
+
+  async createKernel(): Promise<void> {
+    this.assertLinuxHost();
+    const created = await this.promptForKernelSession(this.readSession());
+    if (!created) {
+      return;
+    }
+
+    const action = await vscode.window.showQuickPick(
+      [
+        {
+          label: "Start Now",
+          detail: `Run via start --name ${created.instanceName}`,
+        },
+        {
+          label: "Only Select",
+          detail: "Keep the kernel selected but do not start it now",
+        },
+      ],
+      {
+        title: "Kernel Created",
+        ignoreFocusOut: true,
+      },
+    );
+
+    if (action?.label === "Start Now") {
+      await this.startKernel();
+    }
   }
 
   async startKernel(): Promise<void> {
@@ -87,6 +143,7 @@ export class ViaRunner implements vscode.Disposable {
     const alreadyRunning = await this.isKernelRunning(session.instanceName);
     if (alreadyRunning) {
       this.output.appendLine(`[skip] via instance "${session.instanceName}" is already running.`);
+      this.output.show(true);
       void vscode.window.showInformationMessage(`VIA kernel "${session.instanceName}" is already running.`);
       return;
     }
@@ -98,10 +155,11 @@ export class ViaRunner implements vscode.Disposable {
         cancellable: false,
       },
       async () => {
-        await this.runVia(
+        const result = await this.runVia(
           ["start", "--name", session.instanceName, "--workspace", session.workspacePath],
           session.workspacePath,
         );
+        this.revealResult("Kernel start", result);
       },
     );
 
@@ -145,10 +203,11 @@ export class ViaRunner implements vscode.Disposable {
         cancellable: false,
       },
       async () => {
-        await this.runVia(
+        const result = await this.runVia(
           ["send", "--name", session.instanceName, "--load", editor.document.fileName],
           session.workspacePath,
         );
+        this.revealResult("File execution", result);
       },
     );
 
@@ -159,7 +218,7 @@ export class ViaRunner implements vscode.Disposable {
     this.assertLinuxHost();
     const editor = vscode.window.activeTextEditor;
     if (!editor || !this.isSkillDocument(editor.document)) {
-      void vscode.window.showErrorMessage("Open a .il editor to run a paragraph.");
+      void vscode.window.showErrorMessage("Open a .il editor to run selected code.");
       return;
     }
 
@@ -168,8 +227,8 @@ export class ViaRunner implements vscode.Disposable {
       return;
     }
 
-    const paragraphRange = range ?? inferParagraphRange(editor.document, editor.selection);
-    const source = editor.document.getText(paragraphRange).trim();
+    const executionRange = resolveExecutionRange(editor.document, range, editor.selection);
+    const source = normalizeEvalSource(editor.document.getText(executionRange));
     if (source.length === 0) {
       void vscode.window.showWarningMessage("No SKILL code found in the current selection or paragraph.");
       return;
@@ -178,14 +237,17 @@ export class ViaRunner implements vscode.Disposable {
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: `Running SKILL paragraph via ${session.instanceName}`,
+        title: `Running SKILL code via ${session.instanceName}`,
         cancellable: false,
       },
       async () => {
+        this.output.appendLine("[eval] source:");
+        this.output.appendLine(source);
         const result = await this.runVia(
           ["send", "--name", session.instanceName, "--eval", source],
           session.workspacePath,
         );
+        this.revealResult("Selection execution", result);
         const response = parseJson(result.stdout);
         if (response?.ok === false) {
           throw new Error(response.reason || "via send returned an error.");
@@ -193,7 +255,7 @@ export class ViaRunner implements vscode.Disposable {
       },
     );
 
-    void vscode.window.setStatusBarMessage("VIA paragraph executed.", 3000);
+    void vscode.window.setStatusBarMessage("VIA selection executed.", 3000);
   }
 
   private assertLinuxHost(): void {
@@ -249,7 +311,7 @@ export class ViaRunner implements vscode.Disposable {
       return session;
     }
 
-    await this.configureSession();
+    await this.selectKernel();
     session = this.readSession();
     if (session.instanceName && session.workspacePath) {
       return session;
@@ -265,29 +327,93 @@ export class ViaRunner implements vscode.Disposable {
     };
   }
 
+  private readKnownKernels(): ViaSession[] {
+    const stored = this.context.workspaceState.get<ViaSession[]>(KNOWN_KERNELS_KEY, []);
+    const fromConfig = this.getConfig<ViaSession[]>("knownKernels") || [];
+    return dedupeSessions([...stored, ...fromConfig]);
+  }
+
+  private async setCurrentSession(session: ViaSession): Promise<void> {
+    const normalized = {
+      instanceName: session.instanceName.trim(),
+      workspacePath: session.workspacePath.trim(),
+    };
+
+    await this.context.workspaceState.update(SESSION_NAME_KEY, normalized.instanceName);
+    await this.context.workspaceState.update(WORKSPACE_PATH_KEY, normalized.workspacePath);
+    await this.context.workspaceState.update(
+      KNOWN_KERNELS_KEY,
+      dedupeSessions([normalized, ...this.readKnownKernels()]),
+    );
+    this.updateStatusBar();
+  }
+
+  private async promptForKernelSession(current: ViaSession): Promise<ViaSession | undefined> {
+    const defaultName = current.instanceName || this.getConfig<string>("defaultInstanceName") || "vscode";
+    const instanceName = await vscode.window.showInputBox({
+      title: "VIA Instance Name",
+      prompt: "Name of the via-managed Virtuoso instance",
+      value: defaultName,
+      ignoreFocusOut: true,
+      validateInput: (value) => (value.trim().length === 0 ? "Instance name is required." : undefined),
+    });
+
+    if (!instanceName) {
+      return undefined;
+    }
+
+    const defaultWorkspace = current.workspacePath || this.getConfig<string>("defaultWorkspace");
+    const defaultUri = defaultWorkspace ? vscode.Uri.file(defaultWorkspace) : undefined;
+    const picked = await vscode.window.showOpenDialog({
+      title: "Select Virtuoso Workspace",
+      defaultUri,
+      canSelectFiles: false,
+      canSelectFolders: true,
+      canSelectMany: false,
+      openLabel: "Use Workspace",
+    });
+
+    if (!picked || picked.length === 0) {
+      return undefined;
+    }
+
+    const session = {
+      instanceName: instanceName.trim(),
+      workspacePath: picked[0].fsPath,
+    };
+    await this.setCurrentSession(session);
+    void vscode.window.showInformationMessage(`VIA kernel set to ${session.instanceName}.`);
+    return session;
+  }
+
   private updateStatusBar(): void {
     const session = this.readSession();
     if (!session.instanceName || !session.workspacePath) {
-      this.statusBar.text = "$(debug-disconnect) VIA: Configure";
-      this.statusBar.tooltip = "Configure the via instance name and Virtuoso workspace.";
+      this.statusBar.text = "$(server-process) Select Kernel";
+      this.statusBar.tooltip = "Choose or create a via kernel.";
       this.statusBar.show();
       return;
     }
 
-    this.statusBar.text = `$(radio-tower) VIA: ${session.instanceName}`;
+    this.statusBar.text = `$(server-process) ${session.instanceName} $(chevron-down)`;
     this.statusBar.tooltip = `Workspace: ${session.workspacePath}`;
     this.statusBar.show();
   }
 
-  private async isKernelRunning(instanceName: string): Promise<boolean> {
+  private async listKernels(): Promise<ListedKernel[]> {
     try {
       const result = await this.runVia(["list"]);
-      const line = result.stdout
-        .split(/\r?\n/)
-        .map((entry) => entry.trim())
-        .find((entry) => entry.startsWith(instanceName));
+      return parseListedKernels(result.stdout);
+    } catch (error) {
+      this.output.appendLine(`[warn] failed to inspect via list: ${toErrorMessage(error)}`);
+      return [];
+    }
+  }
 
-      return Boolean(line && /\brunning\b/i.test(line));
+  private async isKernelRunning(instanceName: string): Promise<boolean> {
+    try {
+      const kernels = await this.listKernels();
+      return kernels.some((kernel) => kernel.instanceName === instanceName && /running/i.test(kernel.status || ""));
     } catch (error) {
       this.output.appendLine(`[warn] failed to inspect via list: ${toErrorMessage(error)}`);
       return false;
@@ -325,25 +451,44 @@ export class ViaRunner implements vscode.Disposable {
     }
   }
 
+  private revealResult(title: string, result: ViaCommandResult): void {
+    this.output.appendLine(`[done] ${title}`);
+    if (!result.stdout.trim() && !result.stderr.trim()) {
+      this.output.appendLine("[done] no output returned");
+    }
+    this.output.show(true);
+  }
+
   private getConfig<T>(key: string): T {
     return vscode.workspace.getConfiguration("via").get<T>(key) as T;
   }
 }
 
-function inferParagraphRange(document: vscode.TextDocument, selection: vscode.Selection): vscode.Range {
+function resolveExecutionRange(
+  document: vscode.TextDocument,
+  requestedRange: vscode.Range | undefined,
+  selection: vscode.Selection,
+): vscode.Range {
+  if (requestedRange) {
+    return requestedRange;
+  }
+
   if (!selection.isEmpty) {
     return new vscode.Range(selection.start, selection.end);
   }
 
-  const activeLine = selection.active.line;
+  return inferParagraphRange(document, selection.active.line);
+}
+
+function inferParagraphRange(document: vscode.TextDocument, activeLine: number): vscode.Range {
   let startLine = activeLine;
   let endLine = activeLine;
 
-  while (startLine > 0 && document.lineAt(startLine - 1).text.trim().length > 0) {
+  while (startLine > 0 && shouldExtendParagraph(document, startLine - 1)) {
     startLine -= 1;
   }
 
-  while (endLine < document.lineCount - 1 && document.lineAt(endLine + 1).text.trim().length > 0) {
+  while (endLine < document.lineCount - 1 && shouldExtendParagraph(document, endLine + 1)) {
     endLine += 1;
   }
 
@@ -351,6 +496,15 @@ function inferParagraphRange(document: vscode.TextDocument, selection: vscode.Se
     new vscode.Position(startLine, 0),
     document.lineAt(endLine).range.end,
   );
+}
+
+function shouldExtendParagraph(document: vscode.TextDocument, line: number): boolean {
+  const text = document.lineAt(line).text;
+  return text.trim().length > 0 || /^\s*[)\]]/.test(text);
+}
+
+function normalizeEvalSource(source: string): string {
+  return source.replace(/\r\n/g, "\n").trim();
 }
 
 function parseJson(stdout: string): ViaResponse | undefined {
@@ -364,6 +518,106 @@ function parseJson(stdout: string): ViaResponse | undefined {
   } catch {
     return undefined;
   }
+}
+
+function dedupeSessions(sessions: ViaSession[]): ViaSession[] {
+  const byName = new Map<string, ViaSession>();
+
+  for (const session of sessions) {
+    const instanceName = session.instanceName.trim();
+    if (!instanceName) {
+      continue;
+    }
+
+    const previous = byName.get(instanceName);
+    byName.set(instanceName, {
+      instanceName,
+      workspacePath: session.workspacePath.trim() || previous?.workspacePath || "",
+    });
+  }
+
+  return [...byName.values()];
+}
+
+function dedupeListedKernels(
+  current: ViaSession,
+  running: ListedKernel[],
+  known: ViaSession[],
+): ListedKernel[] {
+  const merged = new Map<string, ListedKernel>();
+
+  const all = [
+    ...(current.instanceName ? [{ ...current, status: current.workspacePath ? "selected" : undefined }] : []),
+    ...running,
+    ...known.map((item) => ({ ...item, status: undefined })),
+  ];
+
+  for (const item of all) {
+    const instanceName = item.instanceName.trim();
+    if (!instanceName) {
+      continue;
+    }
+
+    const previous = merged.get(instanceName);
+    merged.set(instanceName, {
+      instanceName,
+      workspacePath: item.workspacePath.trim() || previous?.workspacePath || "",
+      status: item.status || previous?.status,
+    });
+  }
+
+  return [...merged.values()];
+}
+
+function parseListedKernels(stdout: string): ListedKernel[] {
+  const kernels = new Map<string, ListedKernel>();
+  let currentName = "";
+
+  for (const rawLine of stdout.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("NAME ")) {
+      continue;
+    }
+
+    const summaryMatch = line.match(/^(\S+)\s+\d+\s+(\S+)\s+(\S+)$/);
+    if (summaryMatch) {
+      currentName = summaryMatch[1];
+      kernels.set(currentName, {
+        instanceName: currentName,
+        workspacePath: kernels.get(currentName)?.workspacePath || "",
+        status: summaryMatch[2],
+      });
+      continue;
+    }
+
+    const bracketWorkspaceMatch = line.match(/^\[(.+?)\]\s+workspace\s*:\s*(.+)$/);
+    if (bracketWorkspaceMatch) {
+      const name = bracketWorkspaceMatch[1];
+      const existing = kernels.get(name) || {
+        instanceName: name,
+        workspacePath: "",
+      };
+      kernels.set(name, {
+        ...existing,
+        workspacePath: bracketWorkspaceMatch[2].trim(),
+      });
+      currentName = name;
+      continue;
+    }
+
+    if (currentName && line.startsWith("workspace :")) {
+      const existing = kernels.get(currentName);
+      if (existing) {
+        existing.workspacePath = line.replace(/^workspace\s*:\s*/, "").trim();
+      }
+    }
+  }
+
+  return [...kernels.values()];
+}
+
+function stripCodiconPrefix(label: string): string {
+  return label.replace(/^\$\([^)]+\)\s*/, "");
 }
 
 function toErrorMessage(error: unknown): string {
