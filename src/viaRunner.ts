@@ -33,6 +33,7 @@ type WorkspaceQuickPickItem = vscode.QuickPickItem & {
 };
 
 type DisplayMode = "inherit" | "custom" | "unset";
+type ConnectionState = "unconfigured" | "checking" | "running" | "stopped" | "error";
 
 const WORKSPACE_INSTANCE_NAME_KEY = "via.instanceName";
 const WORKSPACE_PATH_KEY = "via.workspacePath";
@@ -42,11 +43,14 @@ const LEGACY_KNOWN_WORKSPACES_STATE_KEY = "via.knownKernels";
 export class ViaRunner implements vscode.Disposable {
   private readonly output = vscode.window.createOutputChannel("VIA Runner");
   private readonly statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+  private connectionState: ConnectionState = "unconfigured";
+  private connectionDetail = "";
 
   constructor(private readonly context: vscode.ExtensionContext) {
     this.statusBar.command = "via.selectWorkspace";
     this.context.subscriptions.push(this.output, this.statusBar);
     this.updateStatusBar();
+    void this.refreshConnectionState();
   }
 
   dispose(): void {
@@ -131,6 +135,7 @@ export class ViaRunner implements vscode.Disposable {
     }
 
     await this.setCurrentWorkspace(selected);
+    await this.refreshConnectionState();
     void vscode.window.showInformationMessage(`VIA workspace set to ${selected.workspacePath}.`);
   }
 
@@ -160,7 +165,10 @@ export class ViaRunner implements vscode.Disposable {
 
     if (action?.label === "Start Now") {
       await this.startWorkspace();
+      return;
     }
+
+    await this.refreshConnectionState();
   }
 
   async startWorkspace(): Promise<void> {
@@ -174,6 +182,9 @@ export class ViaRunner implements vscode.Disposable {
     if (alreadyRunning) {
       this.output.appendLine(`[skip] via instance "${workspace.instanceName}" is already running.`);
       this.output.show(true);
+      this.connectionState = "running";
+      this.connectionDetail = "already running";
+      this.updateStatusBar();
       void vscode.window.showInformationMessage(`VIA workspace is already running.`);
       return;
     }
@@ -193,6 +204,7 @@ export class ViaRunner implements vscode.Disposable {
       },
     );
 
+    await this.refreshConnectionState();
     void vscode.window.showInformationMessage(`VIA workspace started.`);
   }
 
@@ -241,6 +253,7 @@ export class ViaRunner implements vscode.Disposable {
       },
     );
 
+    await this.refreshConnectionState();
     void vscode.window.setStatusBarMessage(`VIA loaded ${editor.document.fileName}`, 3000);
   }
 
@@ -284,6 +297,7 @@ export class ViaRunner implements vscode.Disposable {
       },
     );
 
+    await this.refreshConnectionState();
     void vscode.window.setStatusBarMessage("VIA selection executed.", 3000);
   }
 
@@ -377,6 +391,8 @@ export class ViaRunner implements vscode.Disposable {
       KNOWN_WORKSPACES_STATE_KEY,
       dedupeWorkspaces([normalized, ...this.readKnownWorkspaces()]),
     );
+    this.connectionState = "checking";
+    this.connectionDetail = "";
     this.updateStatusBar();
   }
 
@@ -469,14 +485,22 @@ export class ViaRunner implements vscode.Disposable {
   private updateStatusBar(): void {
     const workspace = this.readWorkspaceSelection();
     if (!workspace.instanceName || !workspace.workspacePath) {
-      this.statusBar.text = "$(folder-library) Select Workspace";
+      this.statusBar.text = "$(circle-large-outline) VIA: No Workspace";
       this.statusBar.tooltip = "Choose or create a via workspace.";
       this.statusBar.show();
       return;
     }
 
-    this.statusBar.text = `$(folder-library) ${basename(workspace.workspacePath)} $(chevron-down)`;
-    this.statusBar.tooltip = `Workspace: ${workspace.workspacePath}\nInstance: ${workspace.instanceName}`;
+    const icon = connectionStateIcon(this.connectionState);
+    const label = connectionStateLabel(this.connectionState);
+    this.statusBar.text = `${icon} VIA: ${basename(workspace.workspacePath)} (${label})`;
+    this.statusBar.tooltip = [
+      `Workspace: ${workspace.workspacePath}`,
+      `Instance: ${workspace.instanceName}`,
+      `Status: ${label}`,
+      this.connectionDetail ? `Detail: ${this.connectionDetail}` : "",
+      "Click to switch workspace.",
+    ].filter(Boolean).join("\n");
     this.statusBar.show();
   }
 
@@ -528,10 +552,10 @@ export class ViaRunner implements vscode.Disposable {
     source: string,
   ): Promise<ViaCommandResult> {
     this.output.appendLine("[selection-mode] eval");
-      return this.runVia(
-        ["send", "--name", workspace.instanceName, "--eval", source],
-        workspace.workspacePath,
-      );
+    return this.runVia(
+      ["send", "--name", workspace.instanceName, "--eval", source],
+      workspace.workspacePath,
+    );
   }
 
   private async runSelectionAsTempFile(
@@ -580,6 +604,37 @@ export class ViaRunner implements vscode.Disposable {
 
     // Fall back to the old setting name for compatibility.
     return this.getConfig<boolean>("autoStartKernel");
+  }
+
+  private async refreshConnectionState(): Promise<void> {
+    const workspace = this.readWorkspaceSelection();
+    if (!workspace.instanceName || !workspace.workspacePath) {
+      this.connectionState = "unconfigured";
+      this.connectionDetail = "";
+      this.updateStatusBar();
+      return;
+    }
+
+    this.connectionState = "checking";
+    this.connectionDetail = "";
+    this.updateStatusBar();
+
+    try {
+      const workspaces = await this.listWorkspaces();
+      const current = workspaces.find((item) => item.instanceName === workspace.instanceName);
+      if (current && /running/i.test(current.status || "")) {
+        this.connectionState = "running";
+        this.connectionDetail = current.status || "running";
+      } else {
+        this.connectionState = "stopped";
+        this.connectionDetail = current?.status || "not running";
+      }
+    } catch (error) {
+      this.connectionState = "error";
+      this.connectionDetail = toErrorMessage(error);
+    }
+
+    this.updateStatusBar();
   }
 
   private async configureDisplaySettings(): Promise<void> {
@@ -877,6 +932,38 @@ function basename(path: string): string {
   const normalized = path.replace(/\\/g, "/").replace(/\/+$/, "");
   const parts = normalized.split("/");
   return parts[parts.length - 1] || normalized;
+}
+
+function connectionStateIcon(state: ConnectionState): string {
+  switch (state) {
+    case "running":
+      return "$(plug)";
+    case "checking":
+      return "$(sync~spin)";
+    case "stopped":
+      return "$(debug-disconnect)";
+    case "error":
+      return "$(error)";
+    case "unconfigured":
+    default:
+      return "$(circle-large-outline)";
+  }
+}
+
+function connectionStateLabel(state: ConnectionState): string {
+  switch (state) {
+    case "running":
+      return "Connected";
+    case "checking":
+      return "Checking";
+    case "stopped":
+      return "Disconnected";
+    case "error":
+      return "Error";
+    case "unconfigured":
+    default:
+      return "Unconfigured";
+  }
 }
 
 function toErrorMessage(error: unknown): string {

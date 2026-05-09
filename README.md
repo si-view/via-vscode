@@ -10,6 +10,7 @@ VIA Runner is a VS Code extension for running Virtuoso SKILL `.il` files and par
 - Select or create workspaces from the status bar dropdown.
 - Configure and persist a `via` workspace path per VS Code workspace, while keeping the underlying instance name mostly implicit.
 - Offer a one-click entry for the currently opened VS Code workspace.
+- Show workspace connection state in the VS Code status bar, including unconfigured, checking, connected, disconnected, and error states.
 - Show execution commands and returned output in the native `VIA Runner` output channel.
 - Stay inside native VS Code UI using the command palette, icon-based editor title actions, CodeLens, notifications, output, and status bar.
 
