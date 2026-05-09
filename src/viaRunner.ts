@@ -723,11 +723,20 @@ export class ViaRunner implements vscode.Disposable {
       const stdout = failure.stdout || "";
       const stderr = failure.stderr || "";
       const exitCode = typeof failure.code === "number" ? failure.code : 1;
+      const alreadyRunning = args[0] === "start" && isAlreadyRunningMessage(stderr, stdout);
       if (terminal) {
         this.writeTerminalOutput(terminal, stdout, stderr);
         terminal.writeLine("");
-        terminal.writeLine(`[exit ${exitCode}]`);
-        terminal.closeTerminal(exitCode);
+        terminal.writeLine(`[exit ${alreadyRunning ? 0 : exitCode}]`);
+        terminal.closeTerminal(alreadyRunning ? 0 : exitCode);
+      }
+      if (alreadyRunning) {
+        this.knownRunningState = true;
+        return {
+          stdout,
+          stderr,
+          exitCode: 0,
+        };
       }
       if (args[0] === "send" || args[0] === "start") {
         this.knownRunningState = false;
@@ -1211,6 +1220,10 @@ function toErrorMessage(error: unknown): string {
   }
 
   return String(error);
+}
+
+function isAlreadyRunningMessage(...chunks: string[]): boolean {
+  return chunks.some((chunk) => /already running/i.test(chunk));
 }
 
 function formatShellCommand(commandPath: string, args: string[]): string {
