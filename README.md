@@ -26,6 +26,7 @@ This works well with Remote SSH or other remote Linux extension hosts when the l
 1. Open a workspace on a Linux host.
 2. Open any `.il` file.
 3. Run `VIA: Configure Workspace` and choose the Virtuoso workspace path used by `via start --workspace`.
+   That flow also lets you choose whether DISPLAY is inherited, custom, or unset for this workspace.
 4. Use one of the built-in commands:
    - click the status bar workspace selector to choose the current VS Code workspace, an existing workspace, or create a new one
    - `VIA: Start Workspace`

@@ -32,6 +32,8 @@ type WorkspaceQuickPickItem = vscode.QuickPickItem & {
   action?: "current" | "new" | "configure";
 };
 
+type DisplayMode = "inherit" | "custom" | "unset";
+
 const WORKSPACE_INSTANCE_NAME_KEY = "via.instanceName";
 const WORKSPACE_PATH_KEY = "via.workspacePath";
 const KNOWN_WORKSPACES_STATE_KEY = "via.knownWorkspaces";
@@ -54,7 +56,7 @@ export class ViaRunner implements vscode.Disposable {
 
   async configureWorkspace(): Promise<void> {
     this.assertLinuxHost();
-    await this.promptForWorkspaceSelection(this.readWorkspaceSelection(), true);
+    await this.promptForWorkspaceSelection(this.readWorkspaceSelection(), true, true);
   }
 
   async selectWorkspace(): Promise<void> {
@@ -134,7 +136,7 @@ export class ViaRunner implements vscode.Disposable {
 
   async createWorkspace(): Promise<void> {
     this.assertLinuxHost();
-    const created = await this.promptForWorkspaceSelection(this.readWorkspaceSelection(), false);
+    const created = await this.promptForWorkspaceSelection(this.readWorkspaceSelection(), false, false);
     if (!created) {
       return;
     }
@@ -381,6 +383,7 @@ export class ViaRunner implements vscode.Disposable {
   private async promptForWorkspaceSelection(
     current: ViaWorkspace,
     forceInstancePrompt: boolean,
+    configureDisplay: boolean,
   ): Promise<ViaWorkspace | undefined> {
     const defaultWorkspace = current.workspacePath || this.getConfig<string>("defaultWorkspace") || getCurrentWorkspacePath();
     const defaultUri = defaultWorkspace ? vscode.Uri.file(defaultWorkspace) : undefined;
@@ -409,6 +412,9 @@ export class ViaRunner implements vscode.Disposable {
       workspacePath: selectedWorkspacePath,
     };
     await this.setCurrentWorkspace(workspace);
+    if (configureDisplay) {
+      await this.configureDisplaySettings();
+    }
     void vscode.window.showInformationMessage(`VIA workspace set to ${workspace.workspacePath}.`);
     return workspace;
   }
@@ -576,6 +582,64 @@ export class ViaRunner implements vscode.Disposable {
     return this.getConfig<boolean>("autoStartKernel");
   }
 
+  private async configureDisplaySettings(): Promise<void> {
+    const currentMode = this.getDisplayMode();
+    const currentValue = (this.getConfig<string>("displayValue") || "").trim();
+    const picked = await vscode.window.showQuickPick(
+      [
+        {
+          label: "Inherit DISPLAY",
+          description: currentMode === "inherit" ? "Current" : undefined,
+          detail: `Use the extension host DISPLAY: ${process.env.DISPLAY || "<unset>"}`,
+          mode: "inherit" as DisplayMode,
+        },
+        {
+          label: "Use Custom DISPLAY",
+          description: currentMode === "custom" ? "Current" : undefined,
+          detail: currentValue ? `Current value: ${currentValue}` : "Set a DISPLAY such as :0 or localhost:10.0",
+          mode: "custom" as DisplayMode,
+        },
+        {
+          label: "Unset DISPLAY",
+          description: currentMode === "unset" ? "Current" : undefined,
+          detail: "Run via commands without DISPLAY in the environment",
+          mode: "unset" as DisplayMode,
+        },
+      ],
+      {
+        title: "Workspace DISPLAY Mode",
+        ignoreFocusOut: true,
+      },
+    );
+
+    if (!picked) {
+      return;
+    }
+
+    await this.updateWorkspaceSetting("displayMode", picked.mode);
+
+    if (picked.mode === "custom") {
+      const value = await vscode.window.showInputBox({
+        title: "Custom DISPLAY",
+        prompt: "DISPLAY value used for via commands",
+        value: currentValue,
+        ignoreFocusOut: true,
+        validateInput: (input) => (input.trim().length === 0 ? "DISPLAY value is required." : undefined),
+      });
+
+      if (!value) {
+        return;
+      }
+
+      await this.updateWorkspaceSetting("displayValue", value.trim());
+      return;
+    }
+
+    if (picked.mode === "inherit" || picked.mode === "unset") {
+      await this.updateWorkspaceSetting("displayValue", "");
+    }
+  }
+
   private buildViaEnv(): NodeJS.ProcessEnv {
     const env: NodeJS.ProcessEnv = { ...process.env };
     const displayMode = this.getDisplayMode();
@@ -601,7 +665,7 @@ export class ViaRunner implements vscode.Disposable {
     return env;
   }
 
-  private getDisplayMode(): "inherit" | "custom" | "unset" {
+  private getDisplayMode(): DisplayMode {
     const configured = this.getConfig<string>("displayMode");
     if (configured === "inherit" || configured === "custom" || configured === "unset") {
       return configured;
@@ -613,6 +677,10 @@ export class ViaRunner implements vscode.Disposable {
     }
 
     return "inherit";
+  }
+
+  private async updateWorkspaceSetting<T>(key: string, value: T): Promise<void> {
+    await vscode.workspace.getConfiguration("via").update(key, value, vscode.ConfigurationTarget.Workspace);
   }
 
   private getConfig<T>(key: string): T {
