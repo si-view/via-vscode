@@ -15,18 +15,19 @@ type ViaResponse = {
   data?: unknown;
 };
 
-type ViaSession = {
+type ViaWorkspace = {
   instanceName: string;
   workspacePath: string;
 };
 
-type ListedKernel = ViaSession & {
+type ListedWorkspace = ViaWorkspace & {
   status?: string;
 };
 
-const SESSION_NAME_KEY = "via.instanceName";
+const WORKSPACE_INSTANCE_NAME_KEY = "via.instanceName";
 const WORKSPACE_PATH_KEY = "via.workspacePath";
-const KNOWN_KERNELS_KEY = "via.knownKernels";
+const KNOWN_WORKSPACES_STATE_KEY = "via.knownWorkspaces";
+const LEGACY_KNOWN_WORKSPACES_STATE_KEY = "via.knownKernels";
 
 export class ViaRunner implements vscode.Disposable {
   private readonly output = vscode.window.createOutputChannel("VIA Runner");
@@ -43,18 +44,18 @@ export class ViaRunner implements vscode.Disposable {
     this.output.dispose();
   }
 
-  async configureSession(): Promise<void> {
+  async configureWorkspace(): Promise<void> {
     this.assertLinuxHost();
-    await this.promptForWorkspaceSession(this.readSession(), true);
+    await this.promptForWorkspaceSelection(this.readWorkspaceSelection(), true);
   }
 
   async selectWorkspace(): Promise<void> {
     this.assertLinuxHost();
 
-    const current = this.readSession();
-    const running = await this.listKernels();
-    const known = this.readKnownKernels();
-    const merged = dedupeListedKernels(current, running, known);
+    const current = this.readWorkspaceSelection();
+    const running = await this.listWorkspaces();
+    const known = this.readKnownWorkspaces();
+    const merged = dedupeListedWorkspaces(current, running, known);
 
     const picks: vscode.QuickPickItem[] = merged.map((item) => ({
       label: item.workspacePath || item.instanceName,
@@ -93,7 +94,7 @@ export class ViaRunner implements vscode.Disposable {
     }
 
     if (picked.label.startsWith("$(gear)")) {
-      await this.configureSession();
+      await this.configureWorkspace();
       return;
     }
 
@@ -102,13 +103,13 @@ export class ViaRunner implements vscode.Disposable {
       return;
     }
 
-    await this.setCurrentSession(selected);
+    await this.setCurrentWorkspace(selected);
     void vscode.window.showInformationMessage(`VIA workspace set to ${selected.workspacePath}.`);
   }
 
   async createWorkspace(): Promise<void> {
     this.assertLinuxHost();
-    const created = await this.promptForWorkspaceSession(this.readSession(), false);
+    const created = await this.promptForWorkspaceSelection(this.readWorkspaceSelection(), false);
     if (!created) {
       return;
     }
@@ -131,20 +132,20 @@ export class ViaRunner implements vscode.Disposable {
     );
 
     if (action?.label === "Start Now") {
-      await this.startKernel();
+      await this.startWorkspace();
     }
   }
 
-  async startKernel(): Promise<void> {
+  async startWorkspace(): Promise<void> {
     this.assertLinuxHost();
-    const session = await this.ensureSessionConfigured();
-    if (!session) {
+    const workspace = await this.ensureWorkspaceConfigured();
+    if (!workspace) {
       return;
     }
 
-    const alreadyRunning = await this.isKernelRunning(session.instanceName);
+    const alreadyRunning = await this.isWorkspaceRunning(workspace.instanceName);
     if (alreadyRunning) {
-      this.output.appendLine(`[skip] via instance "${session.instanceName}" is already running.`);
+      this.output.appendLine(`[skip] via instance "${workspace.instanceName}" is already running.`);
       this.output.show(true);
       void vscode.window.showInformationMessage(`VIA workspace is already running.`);
       return;
@@ -153,13 +154,13 @@ export class ViaRunner implements vscode.Disposable {
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: `Starting VIA workspace ${basename(session.workspacePath)}`,
+        title: `Starting VIA workspace ${basename(workspace.workspacePath)}`,
         cancellable: false,
       },
       async () => {
         const result = await this.runVia(
-          ["start", "--name", session.instanceName, "--workspace", session.workspacePath],
-          session.workspacePath,
+          ["start", "--name", workspace.instanceName, "--workspace", workspace.workspacePath],
+          workspace.workspacePath,
         );
         this.revealResult("Workspace start", result);
       },
@@ -193,21 +194,21 @@ export class ViaRunner implements vscode.Disposable {
       }
     }
 
-    const session = await this.ensureKernelReady();
-    if (!session) {
+    const workspace = await this.ensureWorkspaceReady();
+    if (!workspace) {
       return;
     }
 
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: `Running ${editor.document.fileName.split("/").pop()} via ${session.instanceName}`,
+        title: `Running ${editor.document.fileName.split("/").pop()} via ${workspace.instanceName}`,
         cancellable: false,
       },
       async () => {
         const result = await this.runVia(
-          ["send", "--name", session.instanceName, "--load", editor.document.fileName],
-          session.workspacePath,
+          ["send", "--name", workspace.instanceName, "--load", editor.document.fileName],
+          workspace.workspacePath,
         );
         this.revealResult("File execution", result);
       },
@@ -224,8 +225,8 @@ export class ViaRunner implements vscode.Disposable {
       return;
     }
 
-    const session = await this.ensureKernelReady();
-    if (!session) {
+    const workspace = await this.ensureWorkspaceReady();
+    if (!workspace) {
       return;
     }
 
@@ -239,15 +240,15 @@ export class ViaRunner implements vscode.Disposable {
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: `Running SKILL code via ${session.instanceName}`,
+        title: `Running SKILL code via ${workspace.instanceName}`,
         cancellable: false,
       },
       async () => {
         this.output.appendLine("[eval] source:");
         this.output.appendLine(source);
         const result = await this.runVia(
-          ["send", "--name", session.instanceName, "--eval", source],
-          session.workspacePath,
+          ["send", "--name", workspace.instanceName, "--eval", source],
+          workspace.workspacePath,
         );
         this.revealResult("Selection execution", result);
         const response = parseJson(result.stdout);
@@ -279,19 +280,19 @@ export class ViaRunner implements vscode.Disposable {
     return document.languageId === "skill" || document.fileName.endsWith(".il");
   }
 
-  private async ensureKernelReady(): Promise<ViaSession | undefined> {
-    const session = await this.ensureSessionConfigured();
-    if (!session) {
+  private async ensureWorkspaceReady(): Promise<ViaWorkspace | undefined> {
+    const workspace = await this.ensureWorkspaceConfigured();
+    if (!workspace) {
       return undefined;
     }
 
-    if (await this.isKernelRunning(session.instanceName)) {
-      return session;
+    if (await this.isWorkspaceRunning(workspace.instanceName)) {
+      return workspace;
     }
 
-    if (this.getConfig<boolean>("autoStartKernel")) {
-      await this.startKernel();
-      return session;
+    if (this.getAutoStartWorkspace()) {
+      await this.startWorkspace();
+      return workspace;
     }
 
     const choice = await vscode.window.showWarningMessage(
@@ -303,57 +304,60 @@ export class ViaRunner implements vscode.Disposable {
       return undefined;
     }
 
-    await this.startKernel();
-    return session;
+    await this.startWorkspace();
+    return workspace;
   }
 
-  private async ensureSessionConfigured(): Promise<ViaSession | undefined> {
-    let session = this.readSession();
-    if (session.instanceName && session.workspacePath) {
-      return session;
+  private async ensureWorkspaceConfigured(): Promise<ViaWorkspace | undefined> {
+    let workspace = this.readWorkspaceSelection();
+    if (workspace.instanceName && workspace.workspacePath) {
+      return workspace;
     }
 
     await this.selectWorkspace();
-    session = this.readSession();
-    if (session.instanceName && session.workspacePath) {
-      return session;
+    workspace = this.readWorkspaceSelection();
+    if (workspace.instanceName && workspace.workspacePath) {
+      return workspace;
     }
 
     return undefined;
   }
 
-  private readSession(): ViaSession {
+  private readWorkspaceSelection(): ViaWorkspace {
     return {
-      instanceName: this.context.workspaceState.get<string>(SESSION_NAME_KEY, "").trim(),
+      instanceName: this.context.workspaceState.get<string>(WORKSPACE_INSTANCE_NAME_KEY, "").trim(),
       workspacePath: this.context.workspaceState.get<string>(WORKSPACE_PATH_KEY, "").trim(),
     };
   }
 
-  private readKnownKernels(): ViaSession[] {
-    const stored = this.context.workspaceState.get<ViaSession[]>(KNOWN_KERNELS_KEY, []);
-    const fromConfig = this.getConfig<ViaSession[]>("knownKernels") || [];
-    return dedupeSessions([...stored, ...fromConfig]);
+  private readKnownWorkspaces(): ViaWorkspace[] {
+    const stored = this.context.workspaceState.get<ViaWorkspace[]>(KNOWN_WORKSPACES_STATE_KEY, []);
+    const legacyStored = this.context.workspaceState.get<ViaWorkspace[]>(LEGACY_KNOWN_WORKSPACES_STATE_KEY, []);
+    const fromConfig = this.getConfig<ViaWorkspace[]>("knownWorkspaces") || [];
+    const legacyConfig = this.getConfig<ViaWorkspace[]>("knownKernels") || [];
+    // Keep reading legacy keys so existing user settings continue to work.
+    return dedupeWorkspaces([...stored, ...legacyStored, ...fromConfig, ...legacyConfig]);
   }
 
-  private async setCurrentSession(session: ViaSession): Promise<void> {
+  private async setCurrentWorkspace(workspace: ViaWorkspace): Promise<void> {
     const normalized = {
-      instanceName: session.instanceName.trim(),
-      workspacePath: session.workspacePath.trim(),
+      instanceName: workspace.instanceName.trim(),
+      workspacePath: workspace.workspacePath.trim(),
     };
 
-    await this.context.workspaceState.update(SESSION_NAME_KEY, normalized.instanceName);
+    await this.context.workspaceState.update(WORKSPACE_INSTANCE_NAME_KEY, normalized.instanceName);
     await this.context.workspaceState.update(WORKSPACE_PATH_KEY, normalized.workspacePath);
     await this.context.workspaceState.update(
-      KNOWN_KERNELS_KEY,
-      dedupeSessions([normalized, ...this.readKnownKernels()]),
+      KNOWN_WORKSPACES_STATE_KEY,
+      dedupeWorkspaces([normalized, ...this.readKnownWorkspaces()]),
     );
     this.updateStatusBar();
   }
 
-  private async promptForWorkspaceSession(
-    current: ViaSession,
+  private async promptForWorkspaceSelection(
+    current: ViaWorkspace,
     forceInstancePrompt: boolean,
-  ): Promise<ViaSession | undefined> {
+  ): Promise<ViaWorkspace | undefined> {
     const defaultWorkspace = current.workspacePath || this.getConfig<string>("defaultWorkspace") || getCurrentWorkspacePath();
     const defaultUri = defaultWorkspace ? vscode.Uri.file(defaultWorkspace) : undefined;
     const picked = await vscode.window.showOpenDialog({
@@ -387,43 +391,43 @@ export class ViaRunner implements vscode.Disposable {
       return undefined;
     }
 
-    const session = {
+    const workspace = {
       instanceName: instanceName.trim(),
       workspacePath: selectedWorkspacePath,
     };
-    await this.setCurrentSession(session);
-    void vscode.window.showInformationMessage(`VIA workspace set to ${session.workspacePath}.`);
-    return session;
+    await this.setCurrentWorkspace(workspace);
+    void vscode.window.showInformationMessage(`VIA workspace set to ${workspace.workspacePath}.`);
+    return workspace;
   }
 
   private updateStatusBar(): void {
-    const session = this.readSession();
-    if (!session.instanceName || !session.workspacePath) {
+    const workspace = this.readWorkspaceSelection();
+    if (!workspace.instanceName || !workspace.workspacePath) {
       this.statusBar.text = "$(folder-library) Select Workspace";
       this.statusBar.tooltip = "Choose or create a via workspace.";
       this.statusBar.show();
       return;
     }
 
-    this.statusBar.text = `$(folder-library) ${basename(session.workspacePath)} $(chevron-down)`;
-    this.statusBar.tooltip = `Workspace: ${session.workspacePath}\nInstance: ${session.instanceName}`;
+    this.statusBar.text = `$(folder-library) ${basename(workspace.workspacePath)} $(chevron-down)`;
+    this.statusBar.tooltip = `Workspace: ${workspace.workspacePath}\nInstance: ${workspace.instanceName}`;
     this.statusBar.show();
   }
 
-  private async listKernels(): Promise<ListedKernel[]> {
+  private async listWorkspaces(): Promise<ListedWorkspace[]> {
     try {
       const result = await this.runVia(["list"]);
-      return parseListedKernels(result.stdout);
+      return parseListedWorkspaces(result.stdout);
     } catch (error) {
       this.output.appendLine(`[warn] failed to inspect via list: ${toErrorMessage(error)}`);
       return [];
     }
   }
 
-  private async isKernelRunning(instanceName: string): Promise<boolean> {
+  private async isWorkspaceRunning(instanceName: string): Promise<boolean> {
     try {
-      const kernels = await this.listKernels();
-      return kernels.some((kernel) => kernel.instanceName === instanceName && /running/i.test(kernel.status || ""));
+      const workspaces = await this.listWorkspaces();
+      return workspaces.some((workspace) => workspace.instanceName === instanceName && /running/i.test(workspace.status || ""));
     } catch (error) {
       this.output.appendLine(`[warn] failed to inspect via list: ${toErrorMessage(error)}`);
       return false;
@@ -467,6 +471,16 @@ export class ViaRunner implements vscode.Disposable {
       this.output.appendLine("[done] no output returned");
     }
     this.output.show(true);
+  }
+
+  private getAutoStartWorkspace(): boolean {
+    const preferred = vscode.workspace.getConfiguration("via").get<boolean>("autoStartWorkspace");
+    if (typeof preferred === "boolean") {
+      return preferred;
+    }
+
+    // Fall back to the old setting name for compatibility.
+    return this.getConfig<boolean>("autoStartKernel");
   }
 
   private getConfig<T>(key: string): T {
@@ -530,11 +544,11 @@ function parseJson(stdout: string): ViaResponse | undefined {
   }
 }
 
-function dedupeSessions(sessions: ViaSession[]): ViaSession[] {
-  const byName = new Map<string, ViaSession>();
+function dedupeWorkspaces(workspaces: ViaWorkspace[]): ViaWorkspace[] {
+  const byName = new Map<string, ViaWorkspace>();
 
-  for (const session of sessions) {
-    const instanceName = session.instanceName.trim();
+  for (const workspace of workspaces) {
+    const instanceName = workspace.instanceName.trim();
     if (!instanceName) {
       continue;
     }
@@ -542,19 +556,19 @@ function dedupeSessions(sessions: ViaSession[]): ViaSession[] {
     const previous = byName.get(instanceName);
     byName.set(instanceName, {
       instanceName,
-      workspacePath: session.workspacePath.trim() || previous?.workspacePath || "",
+      workspacePath: workspace.workspacePath.trim() || previous?.workspacePath || "",
     });
   }
 
   return [...byName.values()];
 }
 
-function dedupeListedKernels(
-  current: ViaSession,
-  running: ListedKernel[],
-  known: ViaSession[],
-): ListedKernel[] {
-  const merged = new Map<string, ListedKernel>();
+function dedupeListedWorkspaces(
+  current: ViaWorkspace,
+  running: ListedWorkspace[],
+  known: ViaWorkspace[],
+): ListedWorkspace[] {
+  const merged = new Map<string, ListedWorkspace>();
 
   const all = [
     ...(current.instanceName ? [{ ...current, status: current.workspacePath ? "selected" : undefined }] : []),
@@ -579,8 +593,8 @@ function dedupeListedKernels(
   return [...merged.values()];
 }
 
-function parseListedKernels(stdout: string): ListedKernel[] {
-  const kernels = new Map<string, ListedKernel>();
+function parseListedWorkspaces(stdout: string): ListedWorkspace[] {
+  const workspaces = new Map<string, ListedWorkspace>();
   let currentName = "";
 
   for (const rawLine of stdout.split(/\r?\n/)) {
@@ -592,9 +606,9 @@ function parseListedKernels(stdout: string): ListedKernel[] {
     const summaryMatch = line.match(/^(\S+)\s+\d+\s+(\S+)\s+(\S+)$/);
     if (summaryMatch) {
       currentName = summaryMatch[1];
-      kernels.set(currentName, {
+      workspaces.set(currentName, {
         instanceName: currentName,
-        workspacePath: kernels.get(currentName)?.workspacePath || "",
+        workspacePath: workspaces.get(currentName)?.workspacePath || "",
         status: summaryMatch[2],
       });
       continue;
@@ -603,11 +617,11 @@ function parseListedKernels(stdout: string): ListedKernel[] {
     const bracketWorkspaceMatch = line.match(/^\[(.+?)\]\s+workspace\s*:\s*(.+)$/);
     if (bracketWorkspaceMatch) {
       const name = bracketWorkspaceMatch[1];
-      const existing = kernels.get(name) || {
+      const existing = workspaces.get(name) || {
         instanceName: name,
         workspacePath: "",
       };
-      kernels.set(name, {
+      workspaces.set(name, {
         ...existing,
         workspacePath: bracketWorkspaceMatch[2].trim(),
       });
@@ -616,14 +630,14 @@ function parseListedKernels(stdout: string): ListedKernel[] {
     }
 
     if (currentName && line.startsWith("workspace :")) {
-      const existing = kernels.get(currentName);
+      const existing = workspaces.get(currentName);
       if (existing) {
         existing.workspacePath = line.replace(/^workspace\s*:\s*/, "").trim();
       }
     }
   }
 
-  return [...kernels.values()];
+  return [...workspaces.values()];
 }
 
 function stripCodiconPrefix(label: string): string {

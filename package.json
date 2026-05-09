@@ -22,9 +22,11 @@
   ],
   "activationEvents": [
     "onLanguage:skill",
+    "onCommand:via.configureWorkspace",
     "onCommand:via.configureSession",
     "onCommand:via.selectWorkspace",
     "onCommand:via.createWorkspace",
+    "onCommand:via.startWorkspace",
     "onCommand:via.startKernel",
     "onCommand:via.runFile",
     "onCommand:via.runSelection"
@@ -33,7 +35,7 @@
   "contributes": {
     "commands": [
       {
-        "command": "via.configureSession",
+        "command": "via.configureWorkspace",
         "title": "VIA: Configure Workspace",
         "category": "VIA",
         "icon": "$(gear)"
@@ -51,7 +53,7 @@
         "icon": "$(add)"
       },
       {
-        "command": "via.startKernel",
+        "command": "via.startWorkspace",
         "title": "VIA: Start Workspace",
         "category": "VIA",
         "icon": "$(debug-start)"
@@ -87,7 +89,7 @@
           "default": "vscode",
           "description": "Default via instance name used behind the scenes."
         },
-        "via.knownKernels": {
+        "via.knownWorkspaces": {
           "type": "array",
           "default": [],
           "description": "Known via workspace presets shown in the workspace selector.",
@@ -103,10 +105,33 @@
             }
           }
         },
-        "via.autoStartKernel": {
+        "via.knownKernels": {
+          "type": "array",
+          "default": [],
+          "description": "Known via workspace presets shown in the workspace selector.",
+          "deprecationMessage": "Use via.knownWorkspaces instead.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "instanceName": {
+                "type": "string"
+              },
+              "workspacePath": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "via.autoStartWorkspace": {
           "type": "boolean",
           "default": true,
           "description": "Start via automatically for the selected workspace before running a file or selection when needed."
+        },
+        "via.autoStartKernel": {
+          "type": "boolean",
+          "default": true,
+          "description": "Start via automatically for the selected workspace before running a file or selection when needed.",
+          "deprecationMessage": "Use via.autoStartWorkspace instead."
         }
       }
     },
@@ -130,10 +155,10 @@
       ],
       "commandPalette": [
         {
-          "command": "via.configureSession"
+          "command": "via.configureWorkspace"
         },
         {
-          "command": "via.startKernel"
+          "command": "via.startWorkspace"
         },
         {
           "command": "via.selectWorkspace"

@@ -32,7 +32,7 @@ This works well with Remote SSH or other remote Linux extension hosts when the l
    - `VIA: Run Selection or Paragraph`
 
 The default workspace path is the currently opened VS Code workspace root when available.
-When `via.autoStartKernel` is enabled, file or paragraph execution starts `via` automatically if needed.
+When `via.autoStartWorkspace` is enabled, file or paragraph execution starts `via` automatically if needed.
 Each execution also reveals the `VIA Runner` output channel so the returned command output is visible immediately.
 
 ## Settings
@@ -40,8 +40,10 @@ Each execution also reveals the `VIA Runner` output channel so the returned comm
 - `via.commandPath`: path to the `via` executable
 - `via.defaultWorkspace`: default Virtuoso workspace path
 - `via.defaultInstanceName`: default internal `via` instance name
-- `via.knownKernels`: optional preset workspace list for the selector
-- `via.autoStartKernel`: auto-start via before running code
+- `via.knownWorkspaces`: optional preset workspace list for the selector
+- `via.autoStartWorkspace`: auto-start via before running code
+
+Older `via.knownKernels`, `via.autoStartKernel`, `via.configureSession`, and `via.startKernel` names are still accepted for compatibility.
 
 ## Development
 
