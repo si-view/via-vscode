@@ -1,4 +1,7 @@
 import { execFile } from "node:child_process";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import * as vscode from "vscode";
 
@@ -268,10 +271,7 @@ export class ViaRunner implements vscode.Disposable {
       async () => {
         this.output.appendLine("[eval] source:");
         this.output.appendLine(source);
-        const result = await this.runVia(
-          ["send", "--name", workspace.instanceName, "--eval", source],
-          workspace.workspacePath,
-        );
+        const result = await this.runSelectionAsTempFile(workspace, source);
         this.revealResult("Selection execution", result);
         const response = parseJson(result.stdout);
         if (response?.ok === false) {
@@ -510,6 +510,25 @@ export class ViaRunner implements vscode.Disposable {
       this.writeCommandOutput(failure.stdout || "", failure.stderr || "");
       this.output.show(true);
       throw new Error(`via command failed: ${toErrorMessage(error)}`);
+    }
+  }
+
+  private async runSelectionAsTempFile(
+    workspace: ViaWorkspace,
+    source: string,
+  ): Promise<ViaCommandResult> {
+    const tempDir = await mkdtemp(join(tmpdir(), "via-runner-"));
+    const tempFile = join(tempDir, "selection.il");
+
+    try {
+      await writeFile(tempFile, `${source}\n`, "utf8");
+      this.output.appendLine(`[selection-file] ${tempFile}`);
+      return await this.runVia(
+        ["send", "--name", workspace.instanceName, "--load", tempFile],
+        workspace.workspacePath,
+      );
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
     }
   }
 
