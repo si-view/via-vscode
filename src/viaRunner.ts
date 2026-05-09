@@ -26,10 +26,6 @@ export type ViaResponse = {
 };
 
 export type InteractiveRunResult = {
-  source: string;
-  stdout: string;
-  stderr: string;
-  exitCode: number;
   ok?: boolean;
   reason?: string;
   data?: unknown;
@@ -500,8 +496,8 @@ export class ViaRunner implements vscode.Disposable {
       },
       async () => {
         const result = shouldUseEvalMode(normalizedSource)
-          ? await this.runSelectionAsEval(workspace, normalizedSource)
-          : await this.runSelectionAsTempFile(workspace, normalizedSource);
+          ? await this.runSelectionAsEval(workspace, normalizedSource, false)
+          : await this.runSelectionAsTempFile(workspace, normalizedSource, false);
         finalResult = result;
       },
     );
@@ -512,10 +508,6 @@ export class ViaRunner implements vscode.Disposable {
 
     const response = parseJson(finalResult?.stdout || "");
     return {
-      source: normalizedSource,
-      stdout: finalResult?.stdout || "",
-      stderr: finalResult?.stderr || "",
-      exitCode: finalResult?.exitCode || 0,
       ok: response?.ok,
       reason: response?.reason,
       data: response?.data,
@@ -805,18 +797,20 @@ export class ViaRunner implements vscode.Disposable {
   private async runSelectionAsEval(
     workspace: ViaWorkspace,
     source: string,
+    revealInTerminal = true,
   ): Promise<ViaCommandResult> {
     this.lastSelectionMode = "eval";
     return this.runViaWithOptions(
       ["send", "--name", workspace.instanceName, "--eval", source],
       workspace.workspacePath,
-      { revealInTerminal: true },
+      { revealInTerminal },
     );
   }
 
   private async runSelectionAsTempFile(
     workspace: ViaWorkspace,
     source: string,
+    revealInTerminal = true,
   ): Promise<ViaCommandResult> {
     const tempDir = await mkdtemp(join(tmpdir(), "via-runner-"));
     const tempFile = join(tempDir, "selection.il");
@@ -827,7 +821,7 @@ export class ViaRunner implements vscode.Disposable {
       return await this.runViaWithOptions(
         ["send", "--name", workspace.instanceName, "--load", tempFile],
         workspace.workspacePath,
-        { revealInTerminal: true },
+        { revealInTerminal },
       );
     } finally {
       await rm(tempDir, { recursive: true, force: true });
@@ -1050,7 +1044,7 @@ export class ViaRunner implements vscode.Disposable {
     try {
       const commandPath = this.getConfig<string>("commandPath") || "via";
       const env = this.buildViaEnv();
-      const result = await execFileAsync(commandPath, ["list"], {
+      const result = await execFileAsync(commandPath, ["list", "--prune"], {
         env,
         encoding: "utf8",
         maxBuffer: 1024 * 1024 * 8,

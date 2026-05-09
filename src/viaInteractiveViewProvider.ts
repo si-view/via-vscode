@@ -1,16 +1,10 @@
 import * as vscode from "vscode";
 import { t } from "./i18n";
-import { InteractiveRunResult, ViaRunner } from "./viaRunner";
+import { ViaRunner } from "./viaRunner";
 
-type HistoryEntry = {
-  source: string;
-  stdout: string;
-  stderr: string;
-  exitCode: number;
-  ok?: boolean;
-  reason?: string;
-  data?: unknown;
-  timestamp: string;
+type OutputLine = {
+  kind: "info" | "success" | "error";
+  text: string;
 };
 
 export class ViaInteractiveViewProvider implements vscode.WebviewViewProvider {
@@ -18,7 +12,7 @@ export class ViaInteractiveViewProvider implements vscode.WebviewViewProvider {
 
   private view: vscode.WebviewView | undefined;
   private currentSource = "";
-  private readonly history: HistoryEntry[] = [];
+  private readonly outputLines: OutputLine[] = [];
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -33,9 +27,7 @@ export class ViaInteractiveViewProvider implements vscode.WebviewViewProvider {
     this.view = webviewView;
     webviewView.title = t("interactive.title");
     webviewView.description = t("interactive.subtitle");
-    webviewView.webview.options = {
-      enableScripts: true,
-    };
+    webviewView.webview.options = { enableScripts: true };
     webviewView.webview.html = this.getHtml();
     void this.render();
 
@@ -52,43 +44,42 @@ export class ViaInteractiveViewProvider implements vscode.WebviewViewProvider {
 
       if (message?.type === "clear") {
         this.currentSource = "";
+        this.outputLines.length = 0;
         await this.render();
       }
     });
   }
 
   private async runCurrentSource(): Promise<void> {
+    const source = this.currentSource.trim();
+    if (!source) {
+      this.pushLine("error", t("interactive.empty"));
+      await this.render();
+      return;
+    }
+
     try {
-      const result = await this.runner.runInteractiveSkill(this.currentSource);
-      this.pushHistory(result);
+      const result = await this.runner.runInteractiveSkill(source);
+      if (typeof result.ok === "boolean") {
+        this.pushLine(result.ok ? "success" : "error", `ok: ${String(result.ok)}`);
+      }
+      if (result.reason) {
+        this.pushLine("error", `${t("interactive.reason")}: ${result.reason}`);
+      }
+      if (result.data !== undefined) {
+        this.pushLine("info", `${t("interactive.data")}: ${formatValue(result.data)}`);
+      }
     } catch (error) {
-      this.pushHistory({
-        source: this.currentSource,
-        stdout: "",
-        stderr: "",
-        exitCode: 1,
-        reason: error instanceof Error ? error.message : String(error),
-        timestamp: formatTimestamp(),
-      });
+      this.pushLine("error", error instanceof Error ? error.message : String(error));
     }
 
     await this.render();
   }
 
-  private pushHistory(result: InteractiveRunResult | HistoryEntry): void {
-    this.history.unshift({
-      source: result.source,
-      stdout: result.stdout,
-      stderr: result.stderr,
-      exitCode: result.exitCode,
-      ok: "ok" in result ? result.ok : undefined,
-      reason: "reason" in result ? result.reason : undefined,
-      data: "data" in result ? result.data : undefined,
-      timestamp: "timestamp" in result ? result.timestamp : formatTimestamp(),
-    });
-
-    if (this.history.length > 50) {
-      this.history.length = 50;
+  private pushLine(kind: OutputLine["kind"], text: string): void {
+    this.outputLines.push({ kind, text });
+    if (this.outputLines.length > 200) {
+      this.outputLines.splice(0, this.outputLines.length - 200);
     }
   }
 
@@ -104,15 +95,8 @@ export class ViaInteractiveViewProvider implements vscode.WebviewViewProvider {
         output: t("interactive.output"),
         input: t("interactive.input"),
         emptyOutput: t("interactive.emptyOutput"),
-        success: t("interactive.success"),
-        failure: t("interactive.failure"),
-        ok: t("interactive.ok"),
-        reason: t("interactive.reason"),
-        data: t("interactive.data"),
-        stdout: t("interactive.stdout"),
-        stderr: t("interactive.stderr"),
       },
-      history: this.history,
+      outputLines: this.outputLines,
     });
   }
 
@@ -132,12 +116,9 @@ export class ViaInteractiveViewProvider implements vscode.WebviewViewProvider {
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>${title}</title>
     <style>
-      :root {
-        color-scheme: light dark;
-      }
+      :root { color-scheme: light dark; }
       body {
         margin: 0;
-        padding: 0;
         height: 100vh;
         background: var(--vscode-editor-background);
         color: var(--vscode-editor-foreground);
@@ -167,44 +148,17 @@ export class ViaInteractiveViewProvider implements vscode.WebviewViewProvider {
         color: var(--vscode-descriptionForeground);
         margin-bottom: 10px;
       }
-      .entry {
-        padding: 10px;
-        margin-bottom: 10px;
-        border: 1px solid var(--vscode-panel-border);
-        border-radius: 6px;
-        background: var(--vscode-editor-background);
-      }
-      .entry.ok {
-        border-color: var(--vscode-terminal-ansiGreen);
-      }
-      .entry.err {
-        border-color: var(--vscode-terminal-ansiRed);
-      }
-      .entry-meta {
-        display: flex;
-        justify-content: space-between;
-        gap: 8px;
-        font-size: 11px;
-        color: var(--vscode-descriptionForeground);
-        margin-bottom: 8px;
-      }
-      .block {
-        margin-top: 8px;
-      }
-      .block-label {
-        font-size: 11px;
-        color: var(--vscode-descriptionForeground);
-        text-transform: uppercase;
-        margin-bottom: 4px;
-      }
-      pre {
-        margin: 0;
+      .line {
         white-space: pre-wrap;
         word-break: break-word;
         font-family: var(--vscode-editor-font-family, var(--vscode-font-family));
         font-size: 12px;
         line-height: 1.45;
+        padding: 2px 0;
       }
+      .info { color: var(--vscode-editor-foreground); }
+      .success { color: var(--vscode-terminal-ansiGreen); }
+      .error { color: var(--vscode-terminal-ansiRed); }
       textarea {
         width: 100%;
         min-height: 110px;
@@ -239,12 +193,6 @@ export class ViaInteractiveViewProvider implements vscode.WebviewViewProvider {
       .empty {
         color: var(--vscode-descriptionForeground);
         font-size: 12px;
-      }
-      .highlight {
-        color: var(--vscode-terminal-ansiGreen);
-      }
-      .error {
-        color: var(--vscode-terminal-ansiRed);
       }
     </style>
   </head>
@@ -284,13 +232,8 @@ export class ViaInteractiveViewProvider implements vscode.WebviewViewProvider {
         }
       });
 
-      run.addEventListener('click', () => {
-        vscode.postMessage({ type: 'run' });
-      });
-
-      clear.addEventListener('click', () => {
-        vscode.postMessage({ type: 'clear' });
-      });
+      run.addEventListener('click', () => vscode.postMessage({ type: 'run' }));
+      clear.addEventListener('click', () => vscode.postMessage({ type: 'clear' }));
 
       window.addEventListener('message', (event) => {
         if (event.data?.type !== 'render') {
@@ -299,55 +242,19 @@ export class ViaInteractiveViewProvider implements vscode.WebviewViewProvider {
 
         source.value = event.data.source || '';
         outputLabel.textContent = event.data.labels.output;
-        renderHistory(event.data);
+        renderOutput(event.data);
+        outputBody.scrollTop = outputBody.scrollHeight;
       });
 
-      function renderHistory(state) {
-        if (!state.history || state.history.length === 0) {
+      function renderOutput(state) {
+        if (!state.outputLines || state.outputLines.length === 0) {
           outputBody.innerHTML = '<div class="empty">' + escapeHtml(state.labels.emptyOutput) + '</div>';
           return;
         }
 
-        outputBody.innerHTML = state.history.map((entry) => {
-          const ok = entry.ok === true;
-          const failed = entry.ok === false || entry.exitCode !== 0 || entry.error;
-          const classes = ['entry'];
-          if (ok) classes.push('ok');
-          if (failed) classes.push('err');
-
-          const blocks = [];
-          blocks.push(block(state.labels.input, entry.source));
-          if (entry.ok !== undefined) {
-            blocks.push(block(state.labels.ok, String(entry.ok), true));
-          }
-          if (entry.reason) {
-            blocks.push(block(state.labels.reason, entry.reason, true));
-          }
-          if (entry.data !== undefined) {
-            blocks.push(block(state.labels.data, JSON.stringify(entry.data, null, 2)));
-          }
-          if (entry.stdout) {
-            blocks.push(block(state.labels.stdout, entry.stdout));
-          }
-          if (entry.stderr) {
-            blocks.push(block(state.labels.stderr, entry.stderr, true));
-          }
-          if (entry.error) {
-            blocks.push(block(state.labels.reason, entry.error, true));
-          }
-
-          return '<div class="' + classes.join(' ') + '">'
-            + '<div class="entry-meta"><span>' + (ok ? state.labels.success : state.labels.failure) + '</span><span>exit ' + entry.exitCode + '</span><span>' + escapeHtml(entry.timestamp) + '</span></div>'
-            + blocks.join('')
-            + '</div>';
+        outputBody.innerHTML = state.outputLines.map((line) => {
+          return '<div class="line ' + line.kind + '">' + escapeHtml(line.text) + '</div>';
         }).join('');
-      }
-
-      function block(label, content, error) {
-        return '<div class="block">'
-          + '<div class="block-label' + (error ? ' error' : '') + '">' + escapeHtml(label) + '</div>'
-          + '<pre' + (error ? ' class="error"' : '') + '>' + escapeHtml(String(content)) + '</pre>'
-          + '</div>';
       }
 
       function escapeHtml(value) {
@@ -382,6 +289,20 @@ function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
-function formatTimestamp(): string {
-  return new Date().toLocaleTimeString();
+function formatValue(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  try {
+    return require("node:util").inspect(value, {
+      depth: 2,
+      colors: false,
+      compact: true,
+      breakLength: 80,
+      maxArrayLength: 10,
+    });
+  } catch {
+    return String(value);
+  }
 }
