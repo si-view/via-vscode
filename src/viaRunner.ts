@@ -98,7 +98,7 @@ export class ViaRunner implements vscode.Disposable {
       vscode.workspace.onDidChangeWorkspaceFolders(() => this.renderStatusBar()),
     );
     this.updateStatusBar();
-    void this.refreshConnectionState();
+    void this.restoreWorkspaceSession();
   }
 
   dispose(): void {
@@ -292,7 +292,7 @@ export class ViaRunner implements vscode.Disposable {
     }
 
     await this.setCurrentWorkspace(selected);
-    await this.refreshConnectionState();
+    await this.refreshConnectionState(true);
     void vscode.window.showInformationMessage(t("info.workspaceSet", { path: selected.workspacePath }));
   }
 
@@ -813,22 +813,68 @@ export class ViaRunner implements vscode.Disposable {
     return this.getConfig<boolean>("autoStartKernel");
   }
 
-  private async refreshConnectionState(): Promise<void> {
+  private async restoreWorkspaceSession(): Promise<void> {
+    const currentEditorWorkspace = getCurrentWorkspaceSelection();
+    const rememberedWorkspace = this.readWorkspaceSelection();
+    const runningWorkspaces = await this.listWorkspacesSilently();
+
+    const currentMatch = currentEditorWorkspace
+      ? findMatchingRunningWorkspace(currentEditorWorkspace, runningWorkspaces)
+      : undefined;
+    if (currentMatch) {
+      await this.setCurrentWorkspace(currentMatch);
+      this.applyConnectionState(true, currentMatch.status || t("label.connected"));
+      return;
+    }
+
+    const rememberedMatch = rememberedWorkspace.instanceName || rememberedWorkspace.workspacePath
+      ? findMatchingRunningWorkspace(rememberedWorkspace, runningWorkspaces)
+      : undefined;
+    if (rememberedMatch) {
+      await this.setCurrentWorkspace(rememberedMatch);
+      this.applyConnectionState(true, rememberedMatch.status || t("label.connected"));
+      return;
+    }
+
+    if (rememberedWorkspace.instanceName || rememberedWorkspace.workspacePath) {
+      this.applyConnectionState(false, t("label.disconnected"));
+      return;
+    }
+
+    if (currentEditorWorkspace) {
+      await this.setCurrentWorkspace(currentEditorWorkspace);
+      this.applyConnectionState(false, t("label.disconnected"));
+      return;
+    }
+
+    this.connectionState = "unconfigured";
+    this.connectionDetail = "";
+    this.knownRunningState = false;
+    this.updateStatusBar();
+  }
+
+  private async refreshConnectionState(probe = false): Promise<void> {
     const workspace = this.readWorkspaceSelection();
     if (!workspace.instanceName || !workspace.workspacePath) {
       this.connectionState = "unconfigured";
       this.connectionDetail = "";
+      this.knownRunningState = false;
       this.updateStatusBar();
       return;
     }
 
-    this.connectionState = this.knownRunningState ? "running" : "stopped";
-    this.connectionDetail = this.knownRunningState ? t("label.connected") : t("label.disconnected");
-    this.updateStatusBar();
+    if (!probe) {
+      this.applyConnectionState(this.knownRunningState, this.knownRunningState ? t("label.connected") : t("label.disconnected"));
+      return;
+    }
+
+    const runningWorkspaces = await this.listWorkspacesSilently();
+    const matched = findMatchingRunningWorkspace(workspace, runningWorkspaces);
+    this.applyConnectionState(Boolean(matched), matched?.status || (matched ? t("label.connected") : t("label.disconnected")));
   }
 
   async refreshConnectionStatus(): Promise<void> {
-    await this.refreshConnectionState();
+    await this.refreshConnectionState(true);
     void vscode.window.showInformationMessage(t("info.connectionStatusRefreshed"));
   }
 
@@ -943,6 +989,28 @@ export class ViaRunner implements vscode.Disposable {
       default:
         return t("label.selectionModeNone");
     }
+  }
+
+  private async listWorkspacesSilently(): Promise<ListedWorkspace[]> {
+    try {
+      const commandPath = this.getConfig<string>("commandPath") || "via";
+      const env = this.buildViaEnv();
+      const result = await execFileAsync(commandPath, ["list"], {
+        env,
+        encoding: "utf8",
+        maxBuffer: 1024 * 1024 * 8,
+      });
+      return parseListedWorkspaces(result.stdout);
+    } catch {
+      return [];
+    }
+  }
+
+  private applyConnectionState(isRunning: boolean, detail: string): void {
+    this.knownRunningState = isRunning;
+    this.connectionState = isRunning ? "running" : "stopped";
+    this.connectionDetail = detail;
+    this.updateStatusBar();
   }
 }
 
@@ -1151,6 +1219,27 @@ function parseListedWorkspaces(stdout: string): ListedWorkspace[] {
   return [...workspaces.values()];
 }
 
+function findMatchingRunningWorkspace(
+  target: ViaWorkspace,
+  runningWorkspaces: ListedWorkspace[],
+): ListedWorkspace | undefined {
+  const normalizedTargetPath = normalizeWorkspacePath(target.workspacePath);
+  const normalizedTargetName = target.instanceName.trim();
+
+  const byWorkspacePath = normalizedTargetPath
+    ? runningWorkspaces.find((workspace) => normalizeWorkspacePath(workspace.workspacePath) === normalizedTargetPath)
+    : undefined;
+  if (byWorkspacePath) {
+    return byWorkspacePath;
+  }
+
+  if (!normalizedTargetName) {
+    return undefined;
+  }
+
+  return runningWorkspaces.find((workspace) => workspace.instanceName.trim() === normalizedTargetName);
+}
+
 function stripCodiconPrefix(label: string): string {
   return label.replace(/^\$\([^)]+\)\s*/, "");
 }
@@ -1180,6 +1269,10 @@ function basename(path: string): string {
   const normalized = path.replace(/\\/g, "/").replace(/\/+$/, "");
   const parts = normalized.split("/");
   return parts[parts.length - 1] || normalized;
+}
+
+function normalizeWorkspacePath(path: string): string {
+  return path.trim().replace(/\\/g, "/").replace(/\/+$/, "");
 }
 
 function connectionStateIcon(state: ConnectionState): string {
