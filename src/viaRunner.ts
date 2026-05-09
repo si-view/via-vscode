@@ -271,7 +271,9 @@ export class ViaRunner implements vscode.Disposable {
       async () => {
         this.output.appendLine("[eval] source:");
         this.output.appendLine(source);
-        const result = await this.runSelectionAsTempFile(workspace, source);
+        const result = shouldUseEvalMode(source)
+          ? await this.runSelectionAsEval(workspace, source)
+          : await this.runSelectionAsTempFile(workspace, source);
         this.revealResult("Selection execution", result);
         const response = parseJson(result.stdout);
         if (response?.ok === false) {
@@ -513,6 +515,17 @@ export class ViaRunner implements vscode.Disposable {
     }
   }
 
+  private async runSelectionAsEval(
+    workspace: ViaWorkspace,
+    source: string,
+  ): Promise<ViaCommandResult> {
+    this.output.appendLine("[selection-mode] eval");
+    return this.runVia(
+      ["send", "--name", workspace.instanceName, "--eval", source],
+      workspace.workspacePath,
+    );
+  }
+
   private async runSelectionAsTempFile(
     workspace: ViaWorkspace,
     source: string,
@@ -522,6 +535,7 @@ export class ViaRunner implements vscode.Disposable {
 
     try {
       await writeFile(tempFile, `${source}\n`, "utf8");
+      this.output.appendLine("[selection-mode] load-temp-file");
       this.output.appendLine(`[selection-file] ${tempFile}`);
       return await this.runVia(
         ["send", "--name", workspace.instanceName, "--load", tempFile],
@@ -606,6 +620,14 @@ function shouldExtendParagraph(document: vscode.TextDocument, line: number): boo
 
 function normalizeEvalSource(source: string): string {
   return source.replace(/\r\n/g, "\n").trim();
+}
+
+function shouldUseEvalMode(source: string): boolean {
+  if (source.includes("\n")) {
+    return false;
+  }
+
+  return source.length > 0 && source.length <= 400;
 }
 
 function parseJson(stdout: string): ViaResponse | undefined {

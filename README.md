@@ -5,7 +5,7 @@ VIA Runner is a VS Code extension for running Virtuoso SKILL `.il` files and par
 ## Features
 
 - Run the current `.il` file with `via send --load`.
-- Run the current selection first, or the paragraph around the cursor when nothing is selected, by writing it to a temporary `.il` file and executing it with `via send --load`.
+- Run the current selection first, or the paragraph around the cursor when nothing is selected. Short single-line snippets use `via send --eval`; multi-line or complex code is written to a temporary `.il` file and executed with `via send --load`.
 - Start the backing Virtuoso process with `via start`.
 - Select or create workspaces from the status bar dropdown.
 - Configure and persist a `via` workspace path per VS Code workspace, while keeping the underlying instance name mostly implicit.
@@ -36,7 +36,7 @@ The default workspace path is the currently opened VS Code workspace root when a
 When configuring a workspace, the internal `via` instance name now stays on a secondary advanced step and can usually be left at its default.
 When `via.autoStartWorkspace` is enabled, file or paragraph execution starts `via` automatically if needed.
 Each execution also reveals the `VIA Runner` output channel so the returned command output is visible immediately.
-Selection execution also reports the temporary file path in the output channel, which makes it easier to debug exactly what was sent to `via`.
+Selection execution reports whether it used direct `eval` mode or a temporary file, and when a temporary file is used its path is shown in the output channel.
 
 ## Settings
 
