@@ -58,19 +58,18 @@ export class ViaInteractiveViewProvider implements vscode.WebviewViewProvider {
 
     try {
       const result = await this.runner.runInteractiveSkill(source);
-      if (typeof result.ok === "boolean") {
-        this.pushLine(result.ok ? "success" : "error", `ok: ${String(result.ok)}`);
-      }
-      if (result.reason) {
-        this.pushLine("error", `${t("interactive.reason")}: ${result.reason}`);
-      }
-      if (result.data !== undefined) {
-        this.pushLine("info", `${t("interactive.data")}: ${formatValue(result.data)}`);
+      this.pushLine("info", `> ${source}`);
+      if (result.ok === false) {
+        this.pushLine("error", result.reason || t("interactive.errorFallback"));
+      } else {
+        this.pushLine("success", formatValue(result.data));
       }
     } catch (error) {
+      this.pushLine("info", `> ${source}`);
       this.pushLine("error", error instanceof Error ? error.message : String(error));
     }
 
+    this.currentSource = "";
     await this.render();
   }
 
@@ -105,8 +104,6 @@ export class ViaInteractiveViewProvider implements vscode.WebviewViewProvider {
       type: "render",
       source: this.currentSource,
       labels: {
-        output: t("interactive.output"),
-        input: t("interactive.input"),
         emptyOutput: t("interactive.emptyOutput"),
       },
       outputLines: this.outputLines,

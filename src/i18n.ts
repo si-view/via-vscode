@@ -35,6 +35,7 @@ type MessageKey =
   | "interactive.empty"
   | "interactive.emptyOutput"
   | "interactive.data"
+  | "interactive.errorFallback"
   | "interactive.input"
   | "interactive.output"
   | "interactive.placeholder"
@@ -145,6 +146,7 @@ const messages: Record<"en" | "zh", Messages> = {
     "interactive.empty": "Enter SKILL code before running it.",
     "interactive.emptyOutput": "No interactive output yet.",
     "interactive.data": "data",
+    "interactive.errorFallback": "Execution failed.",
     "interactive.input": "Input",
     "interactive.output": "Output",
     "interactive.placeholder": "Type interactive SKILL here. Ctrl/Cmd+Enter runs it.",
@@ -252,6 +254,7 @@ const messages: Record<"en" | "zh", Messages> = {
     "interactive.empty": "请先输入要执行的 SKILL 代码。",
     "interactive.emptyOutput": "还没有交互输出。",
     "interactive.data": "数据",
+    "interactive.errorFallback": "执行失败。",
     "interactive.input": "输入",
     "interactive.output": "输出",
     "interactive.placeholder": "在这里输入交互式 SKILL。按 Ctrl/Cmd+Enter 执行。",
