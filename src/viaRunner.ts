@@ -1017,6 +1017,8 @@ export class ViaRunner implements vscode.Disposable {
 
 class TerminalSession implements vscode.Pseudoterminal {
   private readonly writeEmitter = new vscode.EventEmitter<string>();
+  private readonly pendingChunks: string[] = [];
+  private opened = false;
 
   readonly onDidWrite: vscode.Event<string> = this.writeEmitter.event;
 
@@ -1027,6 +1029,7 @@ class TerminalSession implements vscode.Pseudoterminal {
   ) {}
 
   open(): void {
+    this.opened = true;
     const lines = [
       `VIA Runner`,
       this.cwd ? `cwd: ${this.cwd}` : undefined,
@@ -1035,9 +1038,13 @@ class TerminalSession implements vscode.Pseudoterminal {
     ].filter(Boolean);
     this.write(lines.join(EOL));
     this.write(EOL);
+    this.flushPendingChunks();
   }
 
-  close(): void {}
+  close(): void {
+    this.opened = false;
+    this.pendingChunks.length = 0;
+  }
 
   handleInput(): void {}
 
@@ -1046,7 +1053,13 @@ class TerminalSession implements vscode.Pseudoterminal {
       return;
     }
 
-    this.writeEmitter.fire(normalizeTerminalText(content));
+    const normalized = normalizeTerminalText(content);
+    if (!this.opened) {
+      this.pendingChunks.push(normalized);
+      return;
+    }
+
+    this.writeEmitter.fire(normalized);
   }
 
   writeLine(content: string): void {
@@ -1055,6 +1068,18 @@ class TerminalSession implements vscode.Pseudoterminal {
 
   markComplete(): void {
     // Keep the terminal visible after the command finishes so the user can inspect output.
+  }
+
+  private flushPendingChunks(): void {
+    if (!this.opened || this.pendingChunks.length === 0) {
+      return;
+    }
+
+    for (const chunk of this.pendingChunks) {
+      this.writeEmitter.fire(chunk);
+    }
+
+    this.pendingChunks.length = 0;
   }
 }
 
