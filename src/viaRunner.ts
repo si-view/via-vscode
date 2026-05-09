@@ -786,10 +786,11 @@ export class ViaRunner implements vscode.Disposable {
     const session = new TerminalSession("VIA Runner", cwd, env);
     const terminal = vscode.window.createTerminal({
       name: "VIA Runner",
+      location: vscode.TerminalLocation.Panel,
       pty: session,
     });
     this.activeExecutionTerminal = terminal;
-    terminal.show(true);
+    terminal.show(false);
     return session;
   }
 
