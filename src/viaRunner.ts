@@ -39,18 +39,38 @@ const WORKSPACE_INSTANCE_NAME_KEY = "via.instanceName";
 const WORKSPACE_PATH_KEY = "via.workspacePath";
 const KNOWN_WORKSPACES_STATE_KEY = "via.knownWorkspaces";
 const LEGACY_KNOWN_WORKSPACES_STATE_KEY = "via.knownKernels";
+const STATUS_BAR_ID = "via.status";
 
 export class ViaRunner implements vscode.Disposable {
   private readonly output = vscode.window.createOutputChannel("VIA Runner");
-  private readonly statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 10_000);
+  private readonly statusBar = vscode.window.createStatusBarItem(STATUS_BAR_ID, vscode.StatusBarAlignment.Right, 10_000);
   private connectionState: ConnectionState = "unconfigured";
   private connectionDetail = "";
   private lastCommandSummary = "none";
   private lastSelectionMode = "none";
 
   constructor(private readonly context: vscode.ExtensionContext) {
+    this.statusBar.name = "VIA Runner Status";
     this.statusBar.command = "via.showStatusMenu";
+    this.statusBar.accessibilityInformation = {
+      label: "VIA Runner status",
+      role: "button",
+    };
     this.context.subscriptions.push(this.output, this.statusBar);
+    this.context.subscriptions.push(
+      vscode.window.onDidChangeActiveTextEditor(() => this.renderStatusBar()),
+      vscode.window.onDidChangeVisibleTextEditors(() => this.renderStatusBar()),
+      vscode.window.onDidChangeWindowState(() => this.renderStatusBar()),
+      vscode.workspace.onDidChangeConfiguration((event) => {
+        if (event.affectsConfiguration("via")) {
+          void this.refreshConnectionState();
+          return;
+        }
+
+        this.renderStatusBar();
+      }),
+      vscode.workspace.onDidChangeWorkspaceFolders(() => this.renderStatusBar()),
+    );
     this.updateStatusBar();
     void this.refreshConnectionState();
   }
@@ -597,7 +617,7 @@ export class ViaRunner implements vscode.Disposable {
   private updateStatusBar(): void {
     const workspace = this.readWorkspaceSelection();
     if (!workspace.instanceName || !workspace.workspacePath) {
-      this.statusBar.text = "$(circle-large-outline) VIA: No Workspace";
+      this.statusBar.text = "$(circle-large-outline) VIA Unconfigured";
       this.statusBar.tooltip = "Choose or create a via workspace.";
       this.statusBar.show();
       return;
@@ -605,7 +625,7 @@ export class ViaRunner implements vscode.Disposable {
 
     const icon = connectionStateIcon(this.connectionState);
     const label = connectionStateLabel(this.connectionState);
-    this.statusBar.text = `${icon} VIA: ${basename(workspace.workspacePath)} (${label})`;
+    this.statusBar.text = `${icon} VIA ${label}`;
     this.statusBar.tooltip = [
       `Workspace: ${workspace.workspacePath}`,
       `Instance: ${workspace.instanceName}`,
@@ -613,6 +633,10 @@ export class ViaRunner implements vscode.Disposable {
       this.connectionDetail ? `Detail: ${this.connectionDetail}` : "",
       "Click to switch workspace.",
     ].filter(Boolean).join("\n");
+    this.renderStatusBar();
+  }
+
+  private renderStatusBar(): void {
     this.statusBar.show();
   }
 
