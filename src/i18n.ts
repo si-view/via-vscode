@@ -31,6 +31,13 @@ type MessageKey =
   | "info.workspaceLoaded"
   | "info.workspaceSet"
   | "info.workspaceStarted"
+  | "interactive.clear"
+  | "interactive.empty"
+  | "interactive.placeholder"
+  | "interactive.run"
+  | "interactive.running"
+  | "interactive.subtitle"
+  | "interactive.title"
   | "label.alreadySelected"
   | "label.autoStart"
   | "label.clickToSwitchWorkspace"
@@ -129,6 +136,13 @@ const messages: Record<"en" | "zh", Messages> = {
     "info.workspaceLoaded": "VIA loaded {path}.",
     "info.workspaceSet": "VIA workspace set to {path}.",
     "info.workspaceStarted": "VIA workspace started.",
+    "interactive.clear": "Clear",
+    "interactive.empty": "Enter SKILL code before running it.",
+    "interactive.placeholder": "Type interactive SKILL here. Ctrl/Cmd+Enter runs it.",
+    "interactive.run": "Run SKILL",
+    "interactive.running": "Running interactive SKILL via {instance}",
+    "interactive.subtitle": "Interactive SKILL console for the current VIA workspace.",
+    "interactive.title": "VIA SKILL",
     "label.alreadySelected": "Already selected",
     "label.autoStart": "Auto Start",
     "label.clickToSwitchWorkspace": "Click to switch workspace.",
@@ -224,6 +238,13 @@ const messages: Record<"en" | "zh", Messages> = {
     "info.workspaceLoaded": "VIA 已加载 {path}。",
     "info.workspaceSet": "VIA 工作区已设置为 {path}。",
     "info.workspaceStarted": "VIA 工作区已启动。",
+    "interactive.clear": "清空",
+    "interactive.empty": "请先输入要执行的 SKILL 代码。",
+    "interactive.placeholder": "在这里输入交互式 SKILL。按 Ctrl/Cmd+Enter 执行。",
+    "interactive.run": "执行 SKILL",
+    "interactive.running": "通过 {instance} 执行交互式 SKILL",
+    "interactive.subtitle": "当前 VIA 工作区的交互式 SKILL 控制台。",
+    "interactive.title": "VIA SKILL",
     "label.alreadySelected": "已选中",
     "label.autoStart": "自动启动",
     "label.clickToSwitchWorkspace": "点击可切换工作区。",

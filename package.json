@@ -33,7 +33,8 @@
     "onCommand:via.startWorkspace",
     "onCommand:via.startKernel",
     "onCommand:via.runFile",
-    "onCommand:via.runSelection"
+    "onCommand:via.runSelection",
+    "onView:via.interactiveView"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -85,8 +86,32 @@
         "title": "VIA: Run Selection or Paragraph",
         "category": "VIA",
         "icon": "$(run-all)"
+      },
+      {
+        "command": "via.focusInteractiveView",
+        "title": "VIA: Open Interactive SKILL",
+        "category": "VIA",
+        "icon": "$(terminal-view-icon)"
       }
     ],
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "viaPanel",
+          "title": "VIA",
+          "icon": "$(terminal-view-icon)"
+        }
+      ]
+    },
+    "views": {
+      "viaPanel": [
+        {
+          "type": "webview",
+          "id": "via.interactiveView",
+          "name": "Interactive SKILL"
+        }
+      ]
+    },
     "configuration": {
       "title": "VIA Runner",
       "properties": {
@@ -224,6 +249,9 @@
         },
         {
           "command": "via.runSelection"
+        },
+        {
+          "command": "via.focusInteractiveView"
         }
       ]
     },

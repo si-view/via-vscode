@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { ViaCodeLensProvider } from "./viaCodeLensProvider";
+import { ViaInteractiveViewProvider } from "./viaInteractiveViewProvider";
 import { ViaRunner } from "./viaRunner";
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -13,6 +14,11 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     runner,
     codeLensDisposable,
+    vscode.window.registerWebviewViewProvider(
+      ViaInteractiveViewProvider.viewType,
+      new ViaInteractiveViewProvider(context.extensionUri, runner),
+      { webviewOptions: { retainContextWhenHidden: true } },
+    ),
     vscode.commands.registerCommand("via.configureWorkspace", () => runner.configureWorkspace()),
     vscode.commands.registerCommand("via.configureSession", () => runner.configureWorkspace()),
     vscode.commands.registerCommand("via.selectWorkspace", () => runner.selectWorkspace()),
@@ -26,6 +32,10 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("via.runSelection", (range?: vscode.Range) =>
       runner.runSelection(range),
     ),
+    vscode.commands.registerCommand("via.focusInteractiveView", async () => {
+      await vscode.commands.executeCommand("workbench.view.extension.viaPanel");
+      await vscode.commands.executeCommand("via.interactiveView.focus");
+    }),
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (!event.affectsConfiguration("via.language")) {
         return;
