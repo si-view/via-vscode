@@ -89,6 +89,21 @@
           "default": "vscode",
           "description": "Default via instance name used behind the scenes."
         },
+        "via.displayMode": {
+          "type": "string",
+          "enum": [
+            "inherit",
+            "custom",
+            "unset"
+          ],
+          "default": "inherit",
+          "description": "How DISPLAY is passed to via commands."
+        },
+        "via.displayValue": {
+          "type": "string",
+          "default": "",
+          "description": "DISPLAY value used when via.displayMode is set to custom, for example :0 or localhost:10.0."
+        },
         "via.knownWorkspaces": {
           "type": "array",
           "default": [],
@@ -126,6 +141,12 @@
           "type": "boolean",
           "default": true,
           "description": "Start via automatically for the selected workspace before running a file or selection when needed."
+        },
+        "via.useDisplay": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to pass DISPLAY to via commands.",
+          "deprecationMessage": "Use via.displayMode instead."
         },
         "via.autoStartKernel": {
           "type": "boolean",

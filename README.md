@@ -43,10 +43,12 @@ Selection execution reports whether it used direct `eval` mode or a temporary fi
 - `via.commandPath`: path to the `via` executable
 - `via.defaultWorkspace`: default Virtuoso workspace path
 - `via.defaultInstanceName`: default internal `via` instance name
+- `via.displayMode`: choose whether DISPLAY is inherited, explicitly set, or unset
+- `via.displayValue`: DISPLAY value used when `via.displayMode` is `custom`
 - `via.knownWorkspaces`: optional preset workspace list for the selector
 - `via.autoStartWorkspace`: auto-start via before running code
 
-Older `via.knownKernels`, `via.autoStartKernel`, `via.configureSession`, and `via.startKernel` names are still accepted for compatibility.
+Older `via.knownKernels`, `via.autoStartKernel`, `via.configureSession`, `via.startKernel`, and `via.useDisplay` names are still accepted for compatibility.
 
 ## Development
 

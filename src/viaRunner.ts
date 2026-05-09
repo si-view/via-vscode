@@ -497,10 +497,12 @@ export class ViaRunner implements vscode.Disposable {
   private async runVia(args: string[], cwd?: string): Promise<ViaCommandResult> {
     const commandPath = this.getConfig<string>("commandPath") || "via";
     this.output.appendLine(`$ ${commandPath} ${args.join(" ")}`);
+    const env = this.buildViaEnv();
 
     try {
       const result = await execFileAsync(commandPath, args, {
         cwd,
+        env,
         encoding: "utf8",
         maxBuffer: 1024 * 1024 * 8,
       });
@@ -520,10 +522,10 @@ export class ViaRunner implements vscode.Disposable {
     source: string,
   ): Promise<ViaCommandResult> {
     this.output.appendLine("[selection-mode] eval");
-    return this.runVia(
-      ["send", "--name", workspace.instanceName, "--eval", source],
-      workspace.workspacePath,
-    );
+      return this.runVia(
+        ["send", "--name", workspace.instanceName, "--eval", source],
+        workspace.workspacePath,
+      );
   }
 
   private async runSelectionAsTempFile(
@@ -572,6 +574,45 @@ export class ViaRunner implements vscode.Disposable {
 
     // Fall back to the old setting name for compatibility.
     return this.getConfig<boolean>("autoStartKernel");
+  }
+
+  private buildViaEnv(): NodeJS.ProcessEnv {
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    const displayMode = this.getDisplayMode();
+
+    if (displayMode === "unset") {
+      delete env.DISPLAY;
+      this.output.appendLine("[display] unset");
+      return env;
+    }
+
+    if (displayMode === "custom") {
+      const displayValue = (this.getConfig<string>("displayValue") || "").trim();
+      if (!displayValue) {
+        throw new Error("via.displayValue must be set when via.displayMode is custom.");
+      }
+
+      env.DISPLAY = displayValue;
+      this.output.appendLine(`[display] custom ${displayValue}`);
+      return env;
+    }
+
+    this.output.appendLine(`[display] inherit ${env.DISPLAY || "<unset>"}`);
+    return env;
+  }
+
+  private getDisplayMode(): "inherit" | "custom" | "unset" {
+    const configured = this.getConfig<string>("displayMode");
+    if (configured === "inherit" || configured === "custom" || configured === "unset") {
+      return configured;
+    }
+
+    const legacyUseDisplay = vscode.workspace.getConfiguration("via").get<boolean>("useDisplay");
+    if (legacyUseDisplay === false) {
+      return "unset";
+    }
+
+    return "inherit";
   }
 
   private getConfig<T>(key: string): T {
