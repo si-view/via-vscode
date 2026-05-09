@@ -710,7 +710,7 @@ export class ViaRunner implements vscode.Disposable {
         this.writeTerminalOutput(terminal, result.stdout, result.stderr);
         terminal.writeLine("");
         terminal.writeLine("[exit 0]");
-        terminal.closeTerminal(0);
+        terminal.markComplete();
       }
       this.knownRunningState = true;
       return {
@@ -728,7 +728,7 @@ export class ViaRunner implements vscode.Disposable {
         this.writeTerminalOutput(terminal, stdout, stderr);
         terminal.writeLine("");
         terminal.writeLine(`[exit ${alreadyRunning ? 0 : exitCode}]`);
-        terminal.closeTerminal(alreadyRunning ? 0 : exitCode);
+        terminal.markComplete();
       }
       if (alreadyRunning) {
         this.knownRunningState = true;
@@ -1016,10 +1016,8 @@ export class ViaRunner implements vscode.Disposable {
 
 class TerminalSession implements vscode.Pseudoterminal {
   private readonly writeEmitter = new vscode.EventEmitter<string>();
-  private readonly closeEmitter = new vscode.EventEmitter<number>();
 
   readonly onDidWrite: vscode.Event<string> = this.writeEmitter.event;
-  readonly onDidClose?: vscode.Event<number> = this.closeEmitter.event;
 
   constructor(
     private readonly name: string,
@@ -1054,8 +1052,8 @@ class TerminalSession implements vscode.Pseudoterminal {
     this.write(`${content}${EOL}`);
   }
 
-  closeTerminal(code = 0): void {
-    this.closeEmitter.fire(code);
+  markComplete(): void {
+    // Keep the terminal visible after the command finishes so the user can inspect output.
   }
 }
 
