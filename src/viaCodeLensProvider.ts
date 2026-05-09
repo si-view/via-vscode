@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { t } from "./i18n";
 
 export class ViaCodeLensProvider implements vscode.CodeLensProvider {
   provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
@@ -9,7 +10,7 @@ export class ViaCodeLensProvider implements vscode.CodeLensProvider {
     const lenses: vscode.CodeLens[] = [];
     lenses.push(
       new vscode.CodeLens(new vscode.Range(0, 0, 0, 0), {
-        title: "Run File",
+        title: t("codelens.runFile"),
         command: "via.runFile",
         arguments: [document.uri],
       }),
@@ -18,7 +19,7 @@ export class ViaCodeLensProvider implements vscode.CodeLensProvider {
     for (const range of collectParagraphRanges(document)) {
       lenses.push(
         new vscode.CodeLens(range, {
-          title: "Run Paragraph",
+          title: t("codelens.runParagraph"),
           command: "via.runSelection",
           arguments: [range],
         }),

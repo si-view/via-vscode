@@ -95,6 +95,16 @@
           "default": "via",
           "description": "Path to the via executable."
         },
+        "via.language": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "en",
+            "zh"
+          ],
+          "default": "auto",
+          "markdownDescription": "Language used by the VIA Runner runtime UI. `auto` follows the VS Code display language."
+        },
         "via.defaultWorkspace": {
           "type": "string",
           "default": "",

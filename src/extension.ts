@@ -3,14 +3,16 @@ import { ViaCodeLensProvider } from "./viaCodeLensProvider";
 import { ViaRunner } from "./viaRunner";
 
 export function activate(context: vscode.ExtensionContext): void {
-  const runner = new ViaRunner(context);
+  let runner = new ViaRunner(context);
+  let codeLensProvider = new ViaCodeLensProvider();
+  let codeLensDisposable = vscode.languages.registerCodeLensProvider(
+    [{ language: "skill", scheme: "file" }],
+    codeLensProvider,
+  );
 
   context.subscriptions.push(
     runner,
-    vscode.languages.registerCodeLensProvider(
-      [{ language: "skill", scheme: "file" }],
-      new ViaCodeLensProvider(),
-    ),
+    codeLensDisposable,
     vscode.commands.registerCommand("via.configureWorkspace", () => runner.configureWorkspace()),
     vscode.commands.registerCommand("via.configureSession", () => runner.configureWorkspace()),
     vscode.commands.registerCommand("via.selectWorkspace", () => runner.selectWorkspace()),
@@ -24,6 +26,20 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("via.runSelection", (range?: vscode.Range) =>
       runner.runSelection(range),
     ),
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (!event.affectsConfiguration("via.language")) {
+        return;
+      }
+
+      codeLensDisposable.dispose();
+      codeLensProvider = new ViaCodeLensProvider();
+      codeLensDisposable = vscode.languages.registerCodeLensProvider(
+        [{ language: "skill", scheme: "file" }],
+        codeLensProvider,
+      );
+      context.subscriptions.push(codeLensDisposable);
+      void vscode.commands.executeCommand("editor.action.codeLensRefresh");
+    }),
   );
 }
 

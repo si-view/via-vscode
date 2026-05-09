@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import * as vscode from "vscode";
+import { t } from "./i18n";
 
 const execFileAsync = promisify(execFile);
 
@@ -32,6 +33,14 @@ type WorkspaceQuickPickItem = vscode.QuickPickItem & {
   action?: "current" | "new" | "configure";
 };
 
+type ActionQuickPickItem<T extends string> = vscode.QuickPickItem & {
+  action: T;
+};
+
+type DisplayQuickPickItem = ActionQuickPickItem<DisplayMode>;
+type StartDecisionItem = ActionQuickPickItem<"start-now" | "only-select">;
+type InstanceNameModeItem = ActionQuickPickItem<"default" | "custom">;
+
 type DisplayMode = "inherit" | "custom" | "unset";
 type ConnectionState = "unconfigured" | "checking" | "running" | "stopped" | "error";
 
@@ -50,10 +59,10 @@ export class ViaRunner implements vscode.Disposable {
   private lastSelectionMode = "none";
 
   constructor(private readonly context: vscode.ExtensionContext) {
-    this.statusBar.name = "VIA Runner Status";
+    this.statusBar.name = t("statusBar.name");
     this.statusBar.command = "via.showStatusMenu";
     this.statusBar.accessibilityInformation = {
-      label: "VIA Runner status",
+      label: t("accessibility.statusLabel"),
       role: "button",
     };
     this.context.subscriptions.push(this.output, this.statusBar);
@@ -63,6 +72,11 @@ export class ViaRunner implements vscode.Disposable {
       vscode.window.onDidChangeWindowState(() => this.renderStatusBar()),
       vscode.workspace.onDidChangeConfiguration((event) => {
         if (event.affectsConfiguration("via")) {
+          this.statusBar.name = t("statusBar.name");
+          this.statusBar.accessibilityInformation = {
+            label: t("accessibility.statusLabel"),
+            role: "button",
+          };
           void this.refreshConnectionState();
           return;
         }
@@ -81,36 +95,36 @@ export class ViaRunner implements vscode.Disposable {
   }
 
   async showStatusMenu(): Promise<void> {
-    const picked = await vscode.window.showQuickPick(
+    const picked = await vscode.window.showQuickPick<ActionQuickPickItem<"details" | "refresh" | "select" | "start" | "configure">>(
       [
         {
-          label: "Show Status Details",
-          detail: "Display workspace, connection, DISPLAY, and recent command details",
+          label: t("status.menu.details.label"),
+          detail: t("status.menu.details.detail"),
           action: "details",
         },
         {
-          label: "Refresh Connection Status",
-          detail: "Re-check the current via workspace state",
+          label: t("status.menu.refresh.label"),
+          detail: t("status.menu.refresh.detail"),
           action: "refresh",
         },
         {
-          label: "Select Workspace",
-          detail: "Switch to another via workspace",
+          label: t("status.menu.select.label"),
+          detail: t("status.menu.select.detail"),
           action: "select",
         },
         {
-          label: "Start Workspace",
-          detail: "Start the current via workspace",
+          label: t("status.menu.start.label"),
+          detail: t("status.menu.start.detail"),
           action: "start",
         },
         {
-          label: "Configure Workspace",
-          detail: "Edit workspace, internal name, and DISPLAY settings",
+          label: t("status.menu.configure.label"),
+          detail: t("status.menu.configure.detail"),
           action: "configure",
         },
       ],
       {
-        title: "VIA Status Bar",
+        title: t("status.menu.title"),
         ignoreFocusOut: true,
       },
     );
@@ -153,40 +167,40 @@ export class ViaRunner implements vscode.Disposable {
     const statusLabel = connectionStateLabel(this.connectionState);
     const items: vscode.QuickPickItem[] = [
       {
-        label: "Workspace",
-        detail: workspace.workspacePath || "Not configured",
+        label: t("label.workspace"),
+        detail: workspace.workspacePath || t("label.notConfigured"),
       },
       {
-        label: "Instance",
-        detail: workspace.instanceName || "Not configured",
+        label: t("label.instance"),
+        detail: workspace.instanceName || t("label.notConfigured"),
       },
       {
-        label: "Connection",
+        label: t("label.connection"),
         detail: this.connectionDetail ? `${statusLabel} (${this.connectionDetail})` : statusLabel,
       },
       {
-        label: "DISPLAY",
+        label: t("label.display"),
         detail: `${displayMode}: ${displayValue}`,
       },
       {
-        label: "Auto Start",
-        detail: this.getAutoStartWorkspace() ? "enabled" : "disabled",
+        label: t("label.autoStart"),
+        detail: this.getAutoStartWorkspace() ? t("label.enabled") : t("label.disabled"),
       },
       {
-        label: "Last Command",
+        label: t("label.lastCommand"),
         detail: this.lastCommandSummary,
       },
       {
-        label: "Last Selection Mode",
-        detail: this.lastSelectionMode,
+        label: t("label.lastSelectionMode"),
+        detail: this.getLocalizedSelectionMode(),
       },
     ];
 
     await vscode.window.showQuickPick(items, {
-      title: "VIA Status Details",
+      title: t("title.statusDetails"),
       ignoreFocusOut: true,
       canPickMany: false,
-      placeHolder: "Read-only diagnostics for the current VIA workspace",
+      placeHolder: t("prompt.readOnlyDiagnostics"),
     });
   }
 
@@ -208,10 +222,10 @@ export class ViaRunner implements vscode.Disposable {
     if (currentEditorWorkspace) {
       picks.push({
         label: `$(folder-active) ${currentEditorWorkspace.workspacePath}`,
-        description: "Current VS Code workspace",
+        description: t("option.selectCurrentWorkspace"),
         detail: current.workspacePath === currentEditorWorkspace.workspacePath
-          ? "Already selected"
-          : "Use the currently opened VS Code workspace",
+          ? t("label.alreadySelected")
+          : t("option.useCurrentWorkspace"),
         workspace: currentEditorWorkspace,
         action: "current",
       });
@@ -219,31 +233,31 @@ export class ViaRunner implements vscode.Disposable {
 
     picks.push(...merged.map((item) => ({
       label: item.workspacePath || item.instanceName,
-      description: item.status ? `status: ${item.status}` : undefined,
+      description: item.status ? `${t("label.statusPrefix")}: ${item.status}` : undefined,
       detail: item.workspacePath === current.workspacePath
-        ? "Currently selected"
+        ? t("label.alreadySelected")
         : undefined,
       workspace: item,
     })));
 
     picks.push(
       {
-        label: "$(add) New Workspace...",
-        detail: "Create a new via workspace preset and select it",
+        label: `$(add) ${t("option.newWorkspace")}`,
+        detail: t("option.workspacePresetDetail"),
         action: "new",
       },
       {
-        label: "$(gear) Configure Current Workspace...",
+        label: `$(gear) ${t("option.configureCurrentWorkspace")}`,
         detail: current.workspacePath
-          ? `Edit ${current.workspacePath}`
-          : "Set the current via workspace",
+          ? t("label.editPath", { path: current.workspacePath })
+          : t("status.menu.configure.detail"),
         action: "configure",
       },
     );
 
     const picked = await vscode.window.showQuickPick(picks, {
-      title: "Select VIA Workspace",
-      placeHolder: "Choose a known workspace or create a new one",
+      title: t("title.workspaceSelector"),
+      placeHolder: t("prompt.selectWorkspace"),
       ignoreFocusOut: true,
     });
 
@@ -268,7 +282,7 @@ export class ViaRunner implements vscode.Disposable {
 
     await this.setCurrentWorkspace(selected);
     await this.refreshConnectionState();
-    void vscode.window.showInformationMessage(`VIA workspace set to ${selected.workspacePath}.`);
+    void vscode.window.showInformationMessage(t("info.workspaceSet", { path: selected.workspacePath }));
   }
 
   async createWorkspace(): Promise<void> {
@@ -278,24 +292,26 @@ export class ViaRunner implements vscode.Disposable {
       return;
     }
 
-    const action = await vscode.window.showQuickPick(
+    const action = await vscode.window.showQuickPick<StartDecisionItem>(
       [
         {
-          label: "Start Now",
+          label: t("option.startNow"),
           detail: `Run via start for ${created.workspacePath}`,
+          action: "start-now",
         },
         {
-          label: "Only Select",
-          detail: "Keep the workspace selected but do not start it now",
+          label: t("option.onlySelect"),
+          detail: t("option.onlySelectDetail"),
+          action: "only-select",
         },
       ],
       {
-        title: "Workspace Created",
+        title: t("title.workspaceCreated"),
         ignoreFocusOut: true,
       },
     );
 
-    if (action?.label === "Start Now") {
+    if (action?.action === "start-now") {
       await this.startWorkspace();
       return;
     }
@@ -315,16 +331,16 @@ export class ViaRunner implements vscode.Disposable {
       this.output.appendLine(`[skip] via instance "${workspace.instanceName}" is already running.`);
       this.output.show(true);
       this.connectionState = "running";
-      this.connectionDetail = "already running";
+      this.connectionDetail = t("info.workspaceAlreadyRunning");
       this.updateStatusBar();
-      void vscode.window.showInformationMessage(`VIA workspace is already running.`);
+      void vscode.window.showInformationMessage(t("info.workspaceAlreadyRunning"));
       return;
     }
 
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: `Starting VIA workspace ${basename(workspace.workspacePath)}`,
+        title: t("progress.startWorkspace", { name: basename(workspace.workspacePath) }),
         cancellable: false,
       },
       async () => {
@@ -332,12 +348,12 @@ export class ViaRunner implements vscode.Disposable {
           ["start", "--name", workspace.instanceName, "--workspace", workspace.workspacePath],
           workspace.workspacePath,
         );
-        this.revealResult("Workspace start", result);
+        this.revealResult(t("option.startWorkspace"), result);
       },
     );
 
     await this.refreshConnectionState();
-    void vscode.window.showInformationMessage(`VIA workspace started.`);
+    void vscode.window.showInformationMessage(t("info.workspaceStarted"));
   }
 
   async runFile(uri?: vscode.Uri): Promise<void> {
@@ -348,19 +364,19 @@ export class ViaRunner implements vscode.Disposable {
     }
 
     if (!this.isSkillDocument(editor.document)) {
-      void vscode.window.showErrorMessage("VIA Runner only supports .il files.");
+      void vscode.window.showErrorMessage(t("error.onlyIlFiles"));
       return;
     }
 
     if (editor.document.isUntitled) {
-      void vscode.window.showErrorMessage("Save the .il file before running it with via.");
+      void vscode.window.showErrorMessage(t("error.saveBeforeRun"));
       return;
     }
 
     if (editor.document.isDirty) {
       const saved = await editor.document.save();
       if (!saved) {
-        void vscode.window.showErrorMessage("The file must be saved before running it with via.");
+        void vscode.window.showErrorMessage(t("error.mustSaveFile"));
         return;
       }
     }
@@ -373,7 +389,10 @@ export class ViaRunner implements vscode.Disposable {
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: `Running ${editor.document.fileName.split("/").pop()} via ${workspace.instanceName}`,
+        title: t("progress.runFile", {
+          name: editor.document.fileName.split("/").pop() || editor.document.fileName,
+          instance: workspace.instanceName,
+        }),
         cancellable: false,
       },
       async () => {
@@ -381,19 +400,19 @@ export class ViaRunner implements vscode.Disposable {
           ["send", "--name", workspace.instanceName, "--load", editor.document.fileName],
           workspace.workspacePath,
         );
-        this.revealResult("File execution", result);
+        this.revealResult(t("codelens.runFile"), result);
       },
     );
 
     await this.refreshConnectionState();
-    void vscode.window.showInformationMessage(`VIA loaded ${editor.document.fileName}.`);
+    void vscode.window.showInformationMessage(t("info.workspaceLoaded", { path: editor.document.fileName }));
   }
 
   async runSelection(range?: vscode.Range): Promise<void> {
     this.assertLinuxHost();
     const editor = vscode.window.activeTextEditor;
     if (!editor || !this.isSkillDocument(editor.document)) {
-      void vscode.window.showErrorMessage("Open a .il editor to run selected code.");
+      void vscode.window.showErrorMessage(t("error.openIlEditor"));
       return;
     }
 
@@ -405,14 +424,14 @@ export class ViaRunner implements vscode.Disposable {
     const executionRange = resolveExecutionRange(editor.document, range, editor.selection);
     const source = normalizeEvalSource(editor.document.getText(executionRange));
     if (source.length === 0) {
-      void vscode.window.showWarningMessage("No SKILL code found in the current selection or paragraph.");
+      void vscode.window.showWarningMessage(t("message.noSkillCode"));
       return;
     }
 
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: `Running SKILL code via ${workspace.instanceName}`,
+        title: t("progress.runSelection", { instance: workspace.instanceName }),
         cancellable: false,
       },
       async () => {
@@ -421,7 +440,7 @@ export class ViaRunner implements vscode.Disposable {
         const result = shouldUseEvalMode(source)
           ? await this.runSelectionAsEval(workspace, source)
           : await this.runSelectionAsTempFile(workspace, source);
-        this.revealResult("Selection execution", result);
+        this.revealResult(t("codelens.runParagraph"), result);
         const response = parseJson(result.stdout);
         if (response?.ok === false) {
           throw new Error(response.reason || "via send returned an error.");
@@ -430,12 +449,12 @@ export class ViaRunner implements vscode.Disposable {
     );
 
     await this.refreshConnectionState();
-    void vscode.window.showInformationMessage("VIA selection executed.");
+    void vscode.window.showInformationMessage(t("info.selectionExecuted"));
   }
 
   private assertLinuxHost(): void {
     if (process.platform !== "linux") {
-      throw new Error("VIA Runner requires the extension host to run on Linux.");
+      throw new Error(t("error.linuxOnly"));
     }
   }
 
@@ -468,11 +487,11 @@ export class ViaRunner implements vscode.Disposable {
     }
 
     const choice = await vscode.window.showWarningMessage(
-      `The selected VIA workspace is not running.`,
-      "Start Workspace",
+      t("message.workspaceNotRunning"),
+      t("option.startWorkspace"),
     );
 
-    if (choice !== "Start Workspace") {
+    if (choice !== t("option.startWorkspace")) {
       return undefined;
     }
 
@@ -536,12 +555,12 @@ export class ViaRunner implements vscode.Disposable {
     const defaultWorkspace = current.workspacePath || this.getConfig<string>("defaultWorkspace") || getCurrentWorkspacePath();
     const defaultUri = defaultWorkspace ? vscode.Uri.file(defaultWorkspace) : undefined;
     const picked = await vscode.window.showOpenDialog({
-      title: "Select VIA Workspace",
+      title: t("title.workspacePicker"),
       defaultUri,
       canSelectFiles: false,
       canSelectFolders: true,
       canSelectMany: false,
-      openLabel: "Use Workspace",
+      openLabel: t("label.workspace"),
     });
 
     if (!picked || picked.length === 0) {
@@ -563,7 +582,7 @@ export class ViaRunner implements vscode.Disposable {
     if (configureDisplay) {
       await this.configureDisplaySettings();
     }
-    void vscode.window.showInformationMessage(`VIA workspace set to ${workspace.workspacePath}.`);
+    void vscode.window.showInformationMessage(t("info.workspaceSet", { path: workspace.workspacePath }));
     return workspace;
   }
 
@@ -580,19 +599,21 @@ export class ViaRunner implements vscode.Disposable {
       return defaultName;
     }
 
-    const mode = await vscode.window.showQuickPick(
+    const mode = await vscode.window.showQuickPick<InstanceNameModeItem>(
       [
         {
-          label: "Use Default Internal Name",
+          label: t("option.useDefaultInternalName"),
           detail: defaultName,
+          action: "default",
         },
         {
-          label: "Customize Internal Name",
-          detail: "Only needed when you want to override via's internal instance naming",
+          label: t("option.customizeInternalName"),
+          detail: t("option.workspaceInstanceOverrideDetail"),
+          action: "custom",
         },
       ],
       {
-        title: "Workspace Advanced Settings",
+        title: t("title.workspaceAdvancedSettings"),
         ignoreFocusOut: true,
       },
     );
@@ -601,25 +622,25 @@ export class ViaRunner implements vscode.Disposable {
       return undefined;
     }
 
-    if (mode.label === "Use Default Internal Name") {
+    if (mode.action === "default") {
       return defaultName;
     }
 
     return vscode.window.showInputBox({
-      title: "VIA Instance Name",
-      prompt: "Internal via instance name",
+      title: t("title.instanceName"),
+      prompt: t("prompt.instanceName"),
       value: defaultName,
       ignoreFocusOut: true,
-      validateInput: (value) => (value.trim().length === 0 ? "Instance name is required." : undefined),
+      validateInput: (value) => (value.trim().length === 0 ? t("error.instanceNameRequired") : undefined),
     });
   }
 
   private updateStatusBar(): void {
     const workspace = this.readWorkspaceSelection();
     if (!workspace.instanceName || !workspace.workspacePath) {
-      this.statusBar.text = "$(circle-large-outline) VIA Unconfigured";
-      this.statusBar.tooltip = "Choose or create a via workspace.";
-      this.statusBar.show();
+      this.statusBar.text = `$(circle-large-outline) VIA ${t("label.unconfigured")}`;
+      this.statusBar.tooltip = t("status.tooltip.unconfigured");
+      this.renderStatusBar();
       return;
     }
 
@@ -627,11 +648,11 @@ export class ViaRunner implements vscode.Disposable {
     const label = connectionStateLabel(this.connectionState);
     this.statusBar.text = `${icon} VIA ${label}`;
     this.statusBar.tooltip = [
-      `Workspace: ${workspace.workspacePath}`,
-      `Instance: ${workspace.instanceName}`,
-      `Status: ${label}`,
-      this.connectionDetail ? `Detail: ${this.connectionDetail}` : "",
-      "Click to switch workspace.",
+      `${t("label.workspace")}: ${workspace.workspacePath}`,
+      `${t("label.instance")}: ${workspace.instanceName}`,
+      `${t("label.status")}: ${label}`,
+      this.connectionDetail ? `${t("label.detail")}: ${this.connectionDetail}` : "",
+      t("label.clickToSwitchWorkspace"),
     ].filter(Boolean).join("\n");
     this.renderStatusBar();
   }
@@ -763,10 +784,10 @@ export class ViaRunner implements vscode.Disposable {
       const current = workspaces.find((item) => item.instanceName === workspace.instanceName);
       if (current && /running/i.test(current.status || "")) {
         this.connectionState = "running";
-        this.connectionDetail = current.status || "running";
+        this.connectionDetail = current.status || t("label.connected");
       } else {
         this.connectionState = "stopped";
-        this.connectionDetail = current?.status || "not running";
+        this.connectionDetail = current?.status || t("label.disconnected");
       }
     } catch (error) {
       this.connectionState = "error";
@@ -778,35 +799,35 @@ export class ViaRunner implements vscode.Disposable {
 
   async refreshConnectionStatus(): Promise<void> {
     await this.refreshConnectionState();
-    void vscode.window.showInformationMessage("VIA connection status refreshed.");
+    void vscode.window.showInformationMessage(t("info.connectionStatusRefreshed"));
   }
 
   private async configureDisplaySettings(): Promise<void> {
     const currentMode = this.getDisplayMode();
     const currentValue = (this.getConfig<string>("displayValue") || "").trim();
-    const picked = await vscode.window.showQuickPick(
+    const picked = await vscode.window.showQuickPick<DisplayQuickPickItem>(
       [
         {
-          label: "Inherit DISPLAY",
-          description: currentMode === "inherit" ? "Current" : undefined,
-          detail: `Use the extension host DISPLAY: ${process.env.DISPLAY || "<unset>"}`,
-          mode: "inherit" as DisplayMode,
+          label: t("display.inherit"),
+          description: currentMode === "inherit" ? t("display.current") : undefined,
+          detail: t("display.inheritDetail", { value: process.env.DISPLAY || "<unset>" }),
+          action: "inherit",
         },
         {
-          label: "Use Custom DISPLAY",
-          description: currentMode === "custom" ? "Current" : undefined,
-          detail: currentValue ? `Current value: ${currentValue}` : "Set a DISPLAY such as :0 or localhost:10.0",
-          mode: "custom" as DisplayMode,
+          label: t("display.custom"),
+          description: currentMode === "custom" ? t("display.current") : undefined,
+          detail: currentValue ? t("display.customValue", { value: currentValue }) : "Set a DISPLAY such as :0 or localhost:10.0",
+          action: "custom",
         },
         {
-          label: "Unset DISPLAY",
-          description: currentMode === "unset" ? "Current" : undefined,
-          detail: "Run via commands without DISPLAY in the environment",
-          mode: "unset" as DisplayMode,
+          label: t("display.unset"),
+          description: currentMode === "unset" ? t("display.current") : undefined,
+          detail: t("display.unsetDetail"),
+          action: "unset",
         },
       ],
       {
-        title: "Workspace DISPLAY Mode",
+        title: t("title.workspaceDisplayMode"),
         ignoreFocusOut: true,
       },
     );
@@ -815,15 +836,15 @@ export class ViaRunner implements vscode.Disposable {
       return;
     }
 
-    await this.updateWorkspaceSetting("displayMode", picked.mode);
+    await this.updateWorkspaceSetting("displayMode", picked.action);
 
-    if (picked.mode === "custom") {
+    if (picked.action === "custom") {
       const value = await vscode.window.showInputBox({
-        title: "Custom DISPLAY",
-        prompt: "DISPLAY value used for via commands",
+        title: t("display.customTitle"),
+        prompt: t("display.customPrompt"),
         value: currentValue,
         ignoreFocusOut: true,
-        validateInput: (input) => (input.trim().length === 0 ? "DISPLAY value is required." : undefined),
+        validateInput: (input) => (input.trim().length === 0 ? t("display.customRequired") : undefined),
       });
 
       if (!value) {
@@ -834,7 +855,7 @@ export class ViaRunner implements vscode.Disposable {
       return;
     }
 
-    if (picked.mode === "inherit" || picked.mode === "unset") {
+    if (picked.action === "inherit" || picked.action === "unset") {
       await this.updateWorkspaceSetting("displayValue", "");
     }
   }
@@ -852,7 +873,7 @@ export class ViaRunner implements vscode.Disposable {
     if (displayMode === "custom") {
       const displayValue = (this.getConfig<string>("displayValue") || "").trim();
       if (!displayValue) {
-        throw new Error("via.displayValue must be set when via.displayMode is custom.");
+        throw new Error(t("error.customDisplayRequired"));
       }
 
       env.DISPLAY = displayValue;
@@ -884,6 +905,17 @@ export class ViaRunner implements vscode.Disposable {
 
   private getConfig<T>(key: string): T {
     return vscode.workspace.getConfiguration("via").get<T>(key) as T;
+  }
+
+  private getLocalizedSelectionMode(): string {
+    switch (this.lastSelectionMode) {
+      case "eval":
+        return t("label.selectionModeEval");
+      case "load-temp-file":
+        return t("label.selectionModeLoadTempFile");
+      default:
+        return t("label.selectionModeNone");
+    }
   }
 }
 
@@ -1097,16 +1129,16 @@ function connectionStateIcon(state: ConnectionState): string {
 function connectionStateLabel(state: ConnectionState): string {
   switch (state) {
     case "running":
-      return "Connected";
+      return t("label.connected");
     case "checking":
-      return "Checking";
+      return t("label.checking");
     case "stopped":
-      return "Disconnected";
+      return t("label.disconnected");
     case "error":
-      return "Error";
+      return t("label.error");
     case "unconfigured":
     default:
-      return "Unconfigured";
+      return t("label.unconfigured");
   }
 }
 
