@@ -7,7 +7,9 @@ type HistoryEntry = {
   stdout: string;
   stderr: string;
   exitCode: number;
-  error?: string;
+  ok?: boolean;
+  reason?: string;
+  data?: unknown;
   timestamp: string;
 };
 
@@ -65,7 +67,7 @@ export class ViaInteractiveViewProvider implements vscode.WebviewViewProvider {
         stdout: "",
         stderr: "",
         exitCode: 1,
-        error: error instanceof Error ? error.message : String(error),
+        reason: error instanceof Error ? error.message : String(error),
         timestamp: formatTimestamp(),
       });
     }
@@ -79,7 +81,9 @@ export class ViaInteractiveViewProvider implements vscode.WebviewViewProvider {
       stdout: result.stdout,
       stderr: result.stderr,
       exitCode: result.exitCode,
-      error: "error" in result ? result.error : undefined,
+      ok: "ok" in result ? result.ok : undefined,
+      reason: "reason" in result ? result.reason : undefined,
+      data: "data" in result ? result.data : undefined,
       timestamp: "timestamp" in result ? result.timestamp : formatTimestamp(),
     });
 
@@ -97,11 +101,16 @@ export class ViaInteractiveViewProvider implements vscode.WebviewViewProvider {
       type: "render",
       source: this.currentSource,
       labels: {
-        history: t("interactive.history"),
-        emptyHistory: t("interactive.emptyHistory"),
+        output: t("interactive.output"),
+        input: t("interactive.input"),
+        emptyOutput: t("interactive.emptyOutput"),
+        success: t("interactive.success"),
+        failure: t("interactive.failure"),
+        ok: t("interactive.ok"),
+        reason: t("interactive.reason"),
+        data: t("interactive.data"),
         stdout: t("interactive.stdout"),
         stderr: t("interactive.stderr"),
-        error: t("interactive.error"),
       },
       history: this.history,
     });
@@ -127,45 +136,87 @@ export class ViaInteractiveViewProvider implements vscode.WebviewViewProvider {
         color-scheme: light dark;
       }
       body {
-        padding: 0;
         margin: 0;
-        font-family: var(--vscode-font-family);
-        color: var(--vscode-editor-foreground);
+        padding: 0;
+        height: 100vh;
         background: var(--vscode-editor-background);
+        color: var(--vscode-editor-foreground);
+        font-family: var(--vscode-font-family);
       }
       .shell {
         height: 100vh;
         display: grid;
-        grid-template-rows: auto 180px auto 1fr;
-        gap: 8px;
+        grid-template-rows: 1fr auto;
+      }
+      .output {
+        overflow: auto;
+        padding: 12px;
+        border-bottom: 1px solid var(--vscode-panel-border);
+      }
+      .input {
         padding: 10px;
-        box-sizing: border-box;
+        display: grid;
+        gap: 8px;
+        background: var(--vscode-sideBar-background);
       }
       .title {
         display: flex;
-        flex-direction: column;
-        gap: 4px;
-      }
-      .title strong {
-        font-size: 13px;
-      }
-      .title span {
+        justify-content: space-between;
+        gap: 12px;
         font-size: 12px;
         color: var(--vscode-descriptionForeground);
+        margin-bottom: 10px;
+      }
+      .entry {
+        padding: 10px;
+        margin-bottom: 10px;
+        border: 1px solid var(--vscode-panel-border);
+        border-radius: 6px;
+        background: var(--vscode-editor-background);
+      }
+      .entry.ok {
+        border-color: var(--vscode-terminal-ansiGreen);
+      }
+      .entry.err {
+        border-color: var(--vscode-terminal-ansiRed);
+      }
+      .entry-meta {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 11px;
+        color: var(--vscode-descriptionForeground);
+        margin-bottom: 8px;
+      }
+      .block {
+        margin-top: 8px;
+      }
+      .block-label {
+        font-size: 11px;
+        color: var(--vscode-descriptionForeground);
+        text-transform: uppercase;
+        margin-bottom: 4px;
+      }
+      pre {
+        margin: 0;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-family: var(--vscode-editor-font-family, var(--vscode-font-family));
+        font-size: 12px;
+        line-height: 1.45;
       }
       textarea {
         width: 100%;
-        height: 100%;
-        resize: none;
-        border: 1px solid var(--vscode-panel-border);
+        min-height: 110px;
+        resize: vertical;
         border-radius: 6px;
-        padding: 10px;
-        box-sizing: border-box;
+        border: 1px solid var(--vscode-panel-border);
         background: var(--vscode-input-background);
         color: var(--vscode-input-foreground);
+        padding: 10px;
+        box-sizing: border-box;
         font-family: var(--vscode-editor-font-family, var(--vscode-font-family));
         font-size: 13px;
-        line-height: 1.5;
       }
       .actions {
         display: flex;
@@ -185,71 +236,33 @@ export class ViaInteractiveViewProvider implements vscode.WebviewViewProvider {
         background: var(--vscode-button-secondaryBackground);
         color: var(--vscode-button-secondaryForeground);
       }
-      .history {
-        overflow: auto;
-        border-top: 1px solid var(--vscode-panel-border);
-        padding-top: 8px;
-      }
-      .history-title {
-        font-size: 12px;
-        color: var(--vscode-descriptionForeground);
-        margin-bottom: 8px;
-      }
-      .entry {
-        border: 1px solid var(--vscode-panel-border);
-        border-radius: 6px;
-        padding: 10px;
-        margin-bottom: 8px;
-        background: var(--vscode-sideBar-background);
-      }
-      .entry-header {
-        display: flex;
-        justify-content: space-between;
-        gap: 8px;
-        margin-bottom: 8px;
-        font-size: 12px;
-        color: var(--vscode-descriptionForeground);
-      }
-      pre {
-        margin: 0;
-        white-space: pre-wrap;
-        word-break: break-word;
-        font-family: var(--vscode-editor-font-family, var(--vscode-font-family));
-        font-size: 12px;
-        line-height: 1.5;
-      }
-      .section {
-        margin-top: 8px;
-      }
-      .section-label {
-        font-size: 11px;
-        text-transform: uppercase;
-        color: var(--vscode-descriptionForeground);
-        margin-bottom: 4px;
-      }
       .empty {
         color: var(--vscode-descriptionForeground);
         font-size: 12px;
       }
+      .highlight {
+        color: var(--vscode-terminal-ansiGreen);
+      }
       .error {
-        color: var(--vscode-errorForeground);
+        color: var(--vscode-terminal-ansiRed);
       }
     </style>
   </head>
   <body>
     <div class="shell">
-      <div class="title">
-        <strong>${title}</strong>
-        <span>${subtitle}</span>
+      <div class="output">
+        <div class="title">
+          <span>${subtitle}</span>
+          <span id="output-label"></span>
+        </div>
+        <div id="output-body"></div>
       </div>
-      <textarea id="source" spellcheck="false" placeholder="${placeholder}"></textarea>
-      <div class="actions">
-        <button class="primary" id="run">${run}</button>
-        <button class="secondary" id="clear">${clear}</button>
-      </div>
-      <div class="history">
-        <div class="history-title" id="history-title"></div>
-        <div id="history-body"></div>
+      <div class="input">
+        <textarea id="source" spellcheck="false" placeholder="${placeholder}"></textarea>
+        <div class="actions">
+          <button class="primary" id="run">${run}</button>
+          <button class="secondary" id="clear">${clear}</button>
+        </div>
       </div>
     </div>
     <script nonce="${nonce}">
@@ -257,8 +270,8 @@ export class ViaInteractiveViewProvider implements vscode.WebviewViewProvider {
       const source = document.getElementById('source');
       const run = document.getElementById('run');
       const clear = document.getElementById('clear');
-      const historyTitle = document.getElementById('history-title');
-      const historyBody = document.getElementById('history-body');
+      const outputLabel = document.getElementById('output-label');
+      const outputBody = document.getElementById('output-body');
 
       source.addEventListener('input', () => {
         vscode.postMessage({ type: 'updateSource', value: source.value });
@@ -285,37 +298,55 @@ export class ViaInteractiveViewProvider implements vscode.WebviewViewProvider {
         }
 
         source.value = event.data.source || '';
-        historyTitle.textContent = event.data.labels.history;
+        outputLabel.textContent = event.data.labels.output;
+        renderHistory(event.data);
+      });
 
-        if (!event.data.history || event.data.history.length === 0) {
-          historyBody.innerHTML = '<div class="empty">' + escapeHtml(event.data.labels.emptyHistory) + '</div>';
+      function renderHistory(state) {
+        if (!state.history || state.history.length === 0) {
+          outputBody.innerHTML = '<div class="empty">' + escapeHtml(state.labels.emptyOutput) + '</div>';
           return;
         }
 
-        historyBody.innerHTML = event.data.history.map((entry) => {
-          const sections = [];
-          sections.push(section('code', entry.source || ''));
+        outputBody.innerHTML = state.history.map((entry) => {
+          const ok = entry.ok === true;
+          const failed = entry.ok === false || entry.exitCode !== 0 || entry.error;
+          const classes = ['entry'];
+          if (ok) classes.push('ok');
+          if (failed) classes.push('err');
+
+          const blocks = [];
+          blocks.push(block(state.labels.input, entry.source));
+          if (entry.ok !== undefined) {
+            blocks.push(block(state.labels.ok, String(entry.ok), true));
+          }
+          if (entry.reason) {
+            blocks.push(block(state.labels.reason, entry.reason, true));
+          }
+          if (entry.data !== undefined) {
+            blocks.push(block(state.labels.data, JSON.stringify(entry.data, null, 2)));
+          }
           if (entry.stdout) {
-            sections.push(section(event.data.labels.stdout, entry.stdout));
+            blocks.push(block(state.labels.stdout, entry.stdout));
           }
           if (entry.stderr) {
-            sections.push(section(event.data.labels.stderr, entry.stderr));
+            blocks.push(block(state.labels.stderr, entry.stderr, true));
           }
           if (entry.error) {
-            sections.push(section(event.data.labels.error, entry.error, true));
+            blocks.push(block(state.labels.reason, entry.error, true));
           }
 
-          return '<div class="entry">'
-            + '<div class="entry-header"><span>exit ' + entry.exitCode + '</span><span>' + escapeHtml(entry.timestamp) + '</span></div>'
-            + sections.join('')
+          return '<div class="' + classes.join(' ') + '">'
+            + '<div class="entry-meta"><span>' + (ok ? state.labels.success : state.labels.failure) + '</span><span>exit ' + entry.exitCode + '</span><span>' + escapeHtml(entry.timestamp) + '</span></div>'
+            + blocks.join('')
             + '</div>';
         }).join('');
-      });
+      }
 
-      function section(label, content, isError) {
-        return '<div class="section">'
-          + '<div class="section-label' + (isError ? ' error' : '') + '">' + escapeHtml(label) + '</div>'
-          + '<pre' + (isError ? ' class="error"' : '') + '>' + escapeHtml(content) + '</pre>'
+      function block(label, content, error) {
+        return '<div class="block">'
+          + '<div class="block-label' + (error ? ' error' : '') + '">' + escapeHtml(label) + '</div>'
+          + '<pre' + (error ? ' class="error"' : '') + '>' + escapeHtml(String(content)) + '</pre>'
           + '</div>';
       }
 

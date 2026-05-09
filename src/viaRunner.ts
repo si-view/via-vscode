@@ -19,7 +19,7 @@ type ViaRunOptions = {
   revealInTerminal?: boolean;
 };
 
-type ViaResponse = {
+export type ViaResponse = {
   ok?: boolean;
   reason?: string;
   data?: unknown;
@@ -30,6 +30,9 @@ export type InteractiveRunResult = {
   stdout: string;
   stderr: string;
   exitCode: number;
+  ok?: boolean;
+  reason?: string;
+  data?: unknown;
 };
 
 type ViaWorkspace = {
@@ -500,10 +503,6 @@ export class ViaRunner implements vscode.Disposable {
           ? await this.runSelectionAsEval(workspace, normalizedSource)
           : await this.runSelectionAsTempFile(workspace, normalizedSource);
         finalResult = result;
-        const response = parseJson(result.stdout);
-        if (response?.ok === false) {
-          throw new Error(response.reason || "via send returned an error.");
-        }
       },
     );
 
@@ -511,11 +510,15 @@ export class ViaRunner implements vscode.Disposable {
     this.connectionDetail = this.knownRunningState ? t("label.connected") : this.connectionDetail;
     this.updateStatusBar();
 
+    const response = parseJson(finalResult?.stdout || "");
     return {
       source: normalizedSource,
       stdout: finalResult?.stdout || "",
       stderr: finalResult?.stderr || "",
       exitCode: finalResult?.exitCode || 0,
+      ok: response?.ok,
+      reason: response?.reason,
+      data: response?.data,
     };
   }
 

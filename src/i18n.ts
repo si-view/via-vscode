@@ -36,9 +36,17 @@ type MessageKey =
   | "interactive.error"
   | "interactive.history"
   | "interactive.empty"
+  | "interactive.emptyOutput"
+  | "interactive.failure"
+  | "interactive.data"
+  | "interactive.input"
+  | "interactive.ok"
+  | "interactive.output"
   | "interactive.placeholder"
+  | "interactive.reason"
   | "interactive.run"
   | "interactive.running"
+  | "interactive.success"
   | "interactive.stderr"
   | "interactive.stdout"
   | "interactive.subtitle"
@@ -146,9 +154,17 @@ const messages: Record<"en" | "zh", Messages> = {
     "interactive.error": "Error",
     "interactive.history": "History",
     "interactive.empty": "Enter SKILL code before running it.",
+    "interactive.emptyOutput": "No interactive output yet.",
+    "interactive.failure": "Failed",
+    "interactive.data": "data",
+    "interactive.input": "Input",
+    "interactive.ok": "ok",
+    "interactive.output": "Output",
     "interactive.placeholder": "Type interactive SKILL here. Ctrl/Cmd+Enter runs it.",
+    "interactive.reason": "reason",
     "interactive.run": "Run SKILL",
     "interactive.running": "Running interactive SKILL via {instance}",
+    "interactive.success": "Succeeded",
     "interactive.stderr": "stderr",
     "interactive.stdout": "stdout",
     "interactive.subtitle": "Interactive SKILL console for the current VIA workspace.",
@@ -253,9 +269,17 @@ const messages: Record<"en" | "zh", Messages> = {
     "interactive.error": "错误",
     "interactive.history": "历史",
     "interactive.empty": "请先输入要执行的 SKILL 代码。",
+    "interactive.emptyOutput": "还没有交互输出。",
+    "interactive.failure": "失败",
+    "interactive.data": "数据",
+    "interactive.input": "输入",
+    "interactive.ok": "ok",
+    "interactive.output": "输出",
     "interactive.placeholder": "在这里输入交互式 SKILL。按 Ctrl/Cmd+Enter 执行。",
+    "interactive.reason": "原因",
     "interactive.run": "执行 SKILL",
     "interactive.running": "通过 {instance} 执行交互式 SKILL",
+    "interactive.success": "成功",
     "interactive.stderr": "标准错误",
     "interactive.stdout": "标准输出",
     "interactive.subtitle": "当前 VIA 工作区的交互式 SKILL 控制台。",
