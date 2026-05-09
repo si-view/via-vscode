@@ -9,6 +9,7 @@ VIA Runner is a VS Code extension for running Virtuoso SKILL `.il` files and par
 - Start the backing Virtuoso process with `via start`.
 - Select or create workspaces from the status bar dropdown.
 - Configure and persist a `via` workspace path per VS Code workspace, while keeping the underlying instance name mostly implicit.
+- Offer a one-click entry for the currently opened VS Code workspace.
 - Show execution commands and returned output in the native `VIA Runner` output channel.
 - Stay inside native VS Code UI using the command palette, icon-based editor title actions, CodeLens, notifications, output, and status bar.
 
@@ -26,12 +27,13 @@ This works well with Remote SSH or other remote Linux extension hosts when the l
 2. Open any `.il` file.
 3. Run `VIA: Configure Workspace` and choose the Virtuoso workspace path used by `via start --workspace`.
 4. Use one of the built-in commands:
-   - click the status bar workspace selector to choose an existing workspace or create a new one
+   - click the status bar workspace selector to choose the current VS Code workspace, an existing workspace, or create a new one
    - `VIA: Start Workspace`
    - `VIA: Run Current File`
    - `VIA: Run Selection or Paragraph`
 
 The default workspace path is the currently opened VS Code workspace root when available.
+When configuring a workspace, the internal `via` instance name now stays on a secondary advanced step and can usually be left at its default.
 When `via.autoStartWorkspace` is enabled, file or paragraph execution starts `via` automatically if needed.
 Each execution also reveals the `VIA Runner` output channel so the returned command output is visible immediately.
 

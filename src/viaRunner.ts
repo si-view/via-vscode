@@ -24,6 +24,11 @@ type ListedWorkspace = ViaWorkspace & {
   status?: string;
 };
 
+type WorkspaceQuickPickItem = vscode.QuickPickItem & {
+  workspace?: ViaWorkspace;
+  action?: "current" | "new" | "configure";
+};
+
 const WORKSPACE_INSTANCE_NAME_KEY = "via.instanceName";
 const WORKSPACE_PATH_KEY = "via.workspacePath";
 const KNOWN_WORKSPACES_STATE_KEY = "via.knownWorkspaces";
@@ -56,25 +61,42 @@ export class ViaRunner implements vscode.Disposable {
     const running = await this.listWorkspaces();
     const known = this.readKnownWorkspaces();
     const merged = dedupeListedWorkspaces(current, running, known);
+    const currentEditorWorkspace = getCurrentWorkspaceSelection();
 
-    const picks: vscode.QuickPickItem[] = merged.map((item) => ({
+    const picks: WorkspaceQuickPickItem[] = [];
+    if (currentEditorWorkspace) {
+      picks.push({
+        label: `$(folder-active) ${currentEditorWorkspace.workspacePath}`,
+        description: "Current VS Code workspace",
+        detail: current.workspacePath === currentEditorWorkspace.workspacePath
+          ? "Already selected"
+          : "Use the currently opened VS Code workspace",
+        workspace: currentEditorWorkspace,
+        action: "current",
+      });
+    }
+
+    picks.push(...merged.map((item) => ({
       label: item.workspacePath || item.instanceName,
       description: item.status ? `status: ${item.status}` : undefined,
-      detail: item.instanceName === current.instanceName
-        ? `Current workspace • instance: ${item.instanceName}`
-        : `instance: ${item.instanceName}`,
-    }));
+      detail: item.workspacePath === current.workspacePath
+        ? "Currently selected"
+        : undefined,
+      workspace: item,
+    })));
 
     picks.push(
       {
         label: "$(add) New Workspace...",
         detail: "Create a new via workspace preset and select it",
+        action: "new",
       },
       {
         label: "$(gear) Configure Current Workspace...",
-        detail: current.workspacePath || current.instanceName
-          ? `Edit ${current.workspacePath || "current workspace"}`
+        detail: current.workspacePath
+          ? `Edit ${current.workspacePath}`
           : "Set the current via workspace",
+        action: "configure",
       },
     );
 
@@ -88,17 +110,17 @@ export class ViaRunner implements vscode.Disposable {
       return;
     }
 
-    if (picked.label.startsWith("$(add)")) {
+    if (picked.action === "new") {
       await this.createWorkspace();
       return;
     }
 
-    if (picked.label.startsWith("$(gear)")) {
+    if (picked.action === "configure") {
       await this.configureWorkspace();
       return;
     }
 
-    const selected = merged.find((item) => item.workspacePath === stripCodiconPrefix(picked.label));
+    const selected = picked.workspace;
     if (!selected) {
       return;
     }
@@ -374,18 +396,7 @@ export class ViaRunner implements vscode.Disposable {
     }
 
     const selectedWorkspacePath = picked[0].fsPath;
-    const defaultName = current.instanceName
-      || this.getConfig<string>("defaultInstanceName")
-      || inferInstanceNameFromWorkspace(selectedWorkspacePath);
-    const instanceName = forceInstancePrompt
-      ? await vscode.window.showInputBox({
-        title: "VIA Instance Name",
-        prompt: "Optional via instance name used internally",
-        value: defaultName,
-        ignoreFocusOut: true,
-        validateInput: (value) => (value.trim().length === 0 ? "Instance name is required." : undefined),
-      })
-      : defaultName;
+    const instanceName = await this.resolveInstanceName(current, selectedWorkspacePath, forceInstancePrompt);
 
     if (!instanceName) {
       return undefined;
@@ -398,6 +409,53 @@ export class ViaRunner implements vscode.Disposable {
     await this.setCurrentWorkspace(workspace);
     void vscode.window.showInformationMessage(`VIA workspace set to ${workspace.workspacePath}.`);
     return workspace;
+  }
+
+  private async resolveInstanceName(
+    current: ViaWorkspace,
+    workspacePath: string,
+    forcePrompt: boolean,
+  ): Promise<string | undefined> {
+    const defaultName = current.instanceName
+      || this.getConfig<string>("defaultInstanceName")
+      || inferInstanceNameFromWorkspace(workspacePath);
+
+    if (!forcePrompt) {
+      return defaultName;
+    }
+
+    const mode = await vscode.window.showQuickPick(
+      [
+        {
+          label: "Use Default Internal Name",
+          detail: defaultName,
+        },
+        {
+          label: "Customize Internal Name",
+          detail: "Only needed when you want to override via's internal instance naming",
+        },
+      ],
+      {
+        title: "Workspace Advanced Settings",
+        ignoreFocusOut: true,
+      },
+    );
+
+    if (!mode) {
+      return undefined;
+    }
+
+    if (mode.label === "Use Default Internal Name") {
+      return defaultName;
+    }
+
+    return vscode.window.showInputBox({
+      title: "VIA Instance Name",
+      prompt: "Internal via instance name",
+      value: defaultName,
+      ignoreFocusOut: true,
+      validateInput: (value) => (value.trim().length === 0 ? "Instance name is required." : undefined),
+    });
   }
 
   private updateStatusBar(): void {
@@ -646,6 +704,18 @@ function stripCodiconPrefix(label: string): string {
 
 function getCurrentWorkspacePath(): string {
   return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || "";
+}
+
+function getCurrentWorkspaceSelection(): ViaWorkspace | undefined {
+  const workspacePath = getCurrentWorkspacePath();
+  if (!workspacePath) {
+    return undefined;
+  }
+
+  return {
+    workspacePath,
+    instanceName: inferInstanceNameFromWorkspace(workspacePath),
+  };
 }
 
 function inferInstanceNameFromWorkspace(workspacePath: string): string {
