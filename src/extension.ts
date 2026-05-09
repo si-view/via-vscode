@@ -16,6 +16,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("via.selectWorkspace", () => runner.selectWorkspace()),
     vscode.commands.registerCommand("via.createWorkspace", () => runner.createWorkspace()),
     vscode.commands.registerCommand("via.showStatusMenu", () => runner.showStatusMenu()),
+    vscode.commands.registerCommand("via.showStatusDetails", () => runner.showStatusDetails()),
     vscode.commands.registerCommand("via.refreshConnectionStatus", () => runner.refreshConnectionStatus()),
     vscode.commands.registerCommand("via.startWorkspace", () => runner.startWorkspace()),
     vscode.commands.registerCommand("via.startKernel", () => runner.startWorkspace()),
