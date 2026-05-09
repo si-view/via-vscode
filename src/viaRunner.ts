@@ -57,13 +57,13 @@ const LEGACY_KNOWN_WORKSPACES_STATE_KEY = "via.knownKernels";
 const STATUS_BAR_ID = "via.status";
 
 export class ViaRunner implements vscode.Disposable {
-  private readonly output = vscode.window.createOutputChannel("VIA Runner");
   private readonly statusBar = vscode.window.createStatusBarItem(STATUS_BAR_ID, vscode.StatusBarAlignment.Right, 10_000);
   private activeExecutionTerminal: vscode.Terminal | undefined;
   private connectionState: ConnectionState = "unconfigured";
   private connectionDetail = "";
   private lastCommandSummary = "none";
   private lastSelectionMode = "none";
+  private knownRunningState = false;
 
   constructor(private readonly context: vscode.ExtensionContext) {
     this.statusBar.name = t("statusBar.name");
@@ -72,7 +72,7 @@ export class ViaRunner implements vscode.Disposable {
       label: t("accessibility.statusLabel"),
       role: "button",
     };
-    this.context.subscriptions.push(this.output, this.statusBar);
+    this.context.subscriptions.push(this.statusBar);
     this.context.subscriptions.push(
       vscode.window.onDidCloseTerminal((terminal) => {
         if (terminal === this.activeExecutionTerminal) {
@@ -104,7 +104,6 @@ export class ViaRunner implements vscode.Disposable {
   dispose(): void {
     this.activeExecutionTerminal?.dispose();
     this.statusBar.dispose();
-    this.output.dispose();
   }
 
   async showStatusMenu(): Promise<void> {
@@ -226,9 +225,8 @@ export class ViaRunner implements vscode.Disposable {
     this.assertLinuxHost();
 
     const current = this.readWorkspaceSelection();
-    const running = await this.listWorkspaces();
     const known = this.readKnownWorkspaces();
-    const merged = dedupeListedWorkspaces(current, running, known);
+    const merged = dedupeListedWorkspaces(current, [], known);
     const currentEditorWorkspace = getCurrentWorkspaceSelection();
 
     const picks: WorkspaceQuickPickItem[] = [];
@@ -329,7 +327,10 @@ export class ViaRunner implements vscode.Disposable {
       return;
     }
 
-    await this.refreshConnectionState();
+    this.connectionState = "stopped";
+    this.connectionDetail = t("label.disconnected");
+    this.knownRunningState = false;
+    this.updateStatusBar();
   }
 
   async startWorkspace(): Promise<void> {
@@ -339,10 +340,8 @@ export class ViaRunner implements vscode.Disposable {
       return;
     }
 
-    const alreadyRunning = await this.isWorkspaceRunning(workspace.instanceName);
+    const alreadyRunning = this.knownRunningState;
     if (alreadyRunning) {
-      this.output.appendLine(`[skip] via instance "${workspace.instanceName}" is already running.`);
-      this.output.show(true);
       this.connectionState = "running";
       this.connectionDetail = t("info.workspaceAlreadyRunning");
       this.updateStatusBar();
@@ -362,11 +361,13 @@ export class ViaRunner implements vscode.Disposable {
           workspace.workspacePath,
           { revealInTerminal: true },
         );
-        this.revealResult(t("option.startWorkspace"), result);
       },
     );
 
-    await this.refreshConnectionState();
+    this.knownRunningState = true;
+    this.connectionState = "running";
+    this.connectionDetail = t("label.connected");
+    this.updateStatusBar();
     void vscode.window.showInformationMessage(t("info.workspaceStarted"));
   }
 
@@ -415,11 +416,12 @@ export class ViaRunner implements vscode.Disposable {
           workspace.workspacePath,
           { revealInTerminal: true },
         );
-        this.revealResult(t("codelens.runFile"), result);
       },
     );
 
-    await this.refreshConnectionState();
+    this.connectionState = this.knownRunningState ? "running" : this.connectionState;
+    this.connectionDetail = this.knownRunningState ? t("label.connected") : this.connectionDetail;
+    this.updateStatusBar();
     void vscode.window.showInformationMessage(t("info.workspaceLoaded", { path: editor.document.fileName }));
   }
 
@@ -450,12 +452,9 @@ export class ViaRunner implements vscode.Disposable {
         cancellable: false,
       },
       async () => {
-        this.output.appendLine("[eval] source:");
-        this.output.appendLine(source);
         const result = shouldUseEvalMode(source)
           ? await this.runSelectionAsEval(workspace, source)
           : await this.runSelectionAsTempFile(workspace, source);
-        this.revealResult(t("codelens.runParagraph"), result);
         const response = parseJson(result.stdout);
         if (response?.ok === false) {
           throw new Error(response.reason || "via send returned an error.");
@@ -463,7 +462,9 @@ export class ViaRunner implements vscode.Disposable {
       },
     );
 
-    await this.refreshConnectionState();
+    this.connectionState = this.knownRunningState ? "running" : this.connectionState;
+    this.connectionDetail = this.knownRunningState ? t("label.connected") : this.connectionDetail;
+    this.updateStatusBar();
     void vscode.window.showInformationMessage(t("info.selectionExecuted"));
   }
 
@@ -492,7 +493,7 @@ export class ViaRunner implements vscode.Disposable {
       return undefined;
     }
 
-    if (await this.isWorkspaceRunning(workspace.instanceName)) {
+    if (this.knownRunningState) {
       return workspace;
     }
 
@@ -557,7 +558,8 @@ export class ViaRunner implements vscode.Disposable {
       KNOWN_WORKSPACES_STATE_KEY,
       dedupeWorkspaces([normalized, ...this.readKnownWorkspaces()]),
     );
-    this.connectionState = "checking";
+    this.knownRunningState = false;
+    this.connectionState = "stopped";
     this.connectionDetail = "";
     this.updateStatusBar();
   }
@@ -676,26 +678,6 @@ export class ViaRunner implements vscode.Disposable {
     this.statusBar.show();
   }
 
-  private async listWorkspaces(): Promise<ListedWorkspace[]> {
-    try {
-      const result = await this.runVia(["list"], undefined, { revealInTerminal: false });
-      return parseListedWorkspaces(result.stdout);
-    } catch (error) {
-      this.output.appendLine(`[warn] failed to inspect via list: ${toErrorMessage(error)}`);
-      return [];
-    }
-  }
-
-  private async isWorkspaceRunning(instanceName: string): Promise<boolean> {
-    try {
-      const workspaces = await this.listWorkspaces();
-      return workspaces.some((workspace) => workspace.instanceName === instanceName && /running/i.test(workspace.status || ""));
-    } catch (error) {
-      this.output.appendLine(`[warn] failed to inspect via list: ${toErrorMessage(error)}`);
-      return false;
-    }
-  }
-
   private async runVia(
     args: string[],
     cwd?: string,
@@ -710,7 +692,6 @@ export class ViaRunner implements vscode.Disposable {
     options: ViaRunOptions,
   ): Promise<ViaCommandResult> {
     const commandPath = this.getConfig<string>("commandPath") || "via";
-    this.output.appendLine(`$ ${commandPath} ${args.join(" ")}`);
     this.lastCommandSummary = `${commandPath} ${args.join(" ")}`;
     const env = this.buildViaEnv();
     const terminal = options.revealInTerminal ? this.createExecutionTerminal(cwd, env) : undefined;
@@ -731,7 +712,7 @@ export class ViaRunner implements vscode.Disposable {
         terminal.writeLine("[exit 0]");
         terminal.closeTerminal(0);
       }
-      this.writeCommandOutput(result.stdout, result.stderr);
+      this.knownRunningState = true;
       return {
         stdout: result.stdout,
         stderr: result.stderr,
@@ -748,8 +729,12 @@ export class ViaRunner implements vscode.Disposable {
         terminal.writeLine(`[exit ${exitCode}]`);
         terminal.closeTerminal(exitCode);
       }
-      this.writeCommandOutput(failure.stdout || "", failure.stderr || "");
-      this.output.show(true);
+      if (args[0] === "send" || args[0] === "start") {
+        this.knownRunningState = false;
+        this.connectionState = "error";
+        this.connectionDetail = toErrorMessage(error);
+        this.updateStatusBar();
+      }
       throw new Error(`via command failed: ${toErrorMessage(error)}`);
     }
   }
@@ -758,7 +743,6 @@ export class ViaRunner implements vscode.Disposable {
     workspace: ViaWorkspace,
     source: string,
   ): Promise<ViaCommandResult> {
-    this.output.appendLine("[selection-mode] eval");
     this.lastSelectionMode = "eval";
     return this.runViaWithOptions(
       ["send", "--name", workspace.instanceName, "--eval", source],
@@ -777,8 +761,6 @@ export class ViaRunner implements vscode.Disposable {
     try {
       await writeFile(tempFile, `${source}\n`, "utf8");
       this.lastSelectionMode = "load-temp-file";
-      this.output.appendLine("[selection-mode] load-temp-file");
-      this.output.appendLine(`[selection-file] ${tempFile}`);
       return await this.runViaWithOptions(
         ["send", "--name", workspace.instanceName, "--load", tempFile],
         workspace.workspacePath,
@@ -787,24 +769,6 @@ export class ViaRunner implements vscode.Disposable {
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }
-  }
-
-  private writeCommandOutput(stdout: string, stderr: string): void {
-    if (stdout.trim().length > 0) {
-      this.output.appendLine(stdout.trimEnd());
-    }
-
-    if (stderr.trim().length > 0) {
-      this.output.appendLine(stderr.trimEnd());
-    }
-  }
-
-  private revealResult(title: string, result: ViaCommandResult): void {
-    this.output.appendLine(`[done] ${title}`);
-    if (!result.stdout.trim() && !result.stderr.trim()) {
-      this.output.appendLine("[done] no output returned");
-    }
-    this.output.show(true);
   }
 
   private createExecutionTerminal(cwd: string | undefined, env: NodeJS.ProcessEnv): TerminalSession {
@@ -849,25 +813,8 @@ export class ViaRunner implements vscode.Disposable {
       return;
     }
 
-    this.connectionState = "checking";
-    this.connectionDetail = "";
-    this.updateStatusBar();
-
-    try {
-      const workspaces = await this.listWorkspaces();
-      const current = workspaces.find((item) => item.instanceName === workspace.instanceName);
-      if (current && /running/i.test(current.status || "")) {
-        this.connectionState = "running";
-        this.connectionDetail = current.status || t("label.connected");
-      } else {
-        this.connectionState = "stopped";
-        this.connectionDetail = current?.status || t("label.disconnected");
-      }
-    } catch (error) {
-      this.connectionState = "error";
-      this.connectionDetail = toErrorMessage(error);
-    }
-
+    this.connectionState = this.knownRunningState ? "running" : "stopped";
+    this.connectionDetail = this.knownRunningState ? t("label.connected") : t("label.disconnected");
     this.updateStatusBar();
   }
 
@@ -940,7 +887,6 @@ export class ViaRunner implements vscode.Disposable {
 
     if (displayMode === "unset") {
       delete env.DISPLAY;
-      this.output.appendLine("[display] unset");
       return env;
     }
 
@@ -951,11 +897,9 @@ export class ViaRunner implements vscode.Disposable {
       }
 
       env.DISPLAY = displayValue;
-      this.output.appendLine(`[display] custom ${displayValue}`);
       return env;
     }
 
-    this.output.appendLine(`[display] inherit ${env.DISPLAY || "<unset>"}`);
     return env;
   }
 
