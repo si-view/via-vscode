@@ -42,7 +42,7 @@ const LEGACY_KNOWN_WORKSPACES_STATE_KEY = "via.knownKernels";
 
 export class ViaRunner implements vscode.Disposable {
   private readonly output = vscode.window.createOutputChannel("VIA Runner");
-  private readonly statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+  private readonly statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 10_000);
   private connectionState: ConnectionState = "unconfigured";
   private connectionDetail = "";
   private lastCommandSummary = "none";
@@ -366,7 +366,7 @@ export class ViaRunner implements vscode.Disposable {
     );
 
     await this.refreshConnectionState();
-    void vscode.window.setStatusBarMessage(`VIA loaded ${editor.document.fileName}`, 3000);
+    void vscode.window.showInformationMessage(`VIA loaded ${editor.document.fileName}.`);
   }
 
   async runSelection(range?: vscode.Range): Promise<void> {
@@ -410,7 +410,7 @@ export class ViaRunner implements vscode.Disposable {
     );
 
     await this.refreshConnectionState();
-    void vscode.window.setStatusBarMessage("VIA selection executed.", 3000);
+    void vscode.window.showInformationMessage("VIA selection executed.");
   }
 
   private assertLinuxHost(): void {
@@ -754,7 +754,7 @@ export class ViaRunner implements vscode.Disposable {
 
   async refreshConnectionStatus(): Promise<void> {
     await this.refreshConnectionState();
-    void vscode.window.setStatusBarMessage("VIA connection status refreshed.", 2500);
+    void vscode.window.showInformationMessage("VIA connection status refreshed.");
   }
 
   private async configureDisplaySettings(): Promise<void> {
