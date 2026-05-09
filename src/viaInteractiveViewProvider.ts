@@ -43,14 +43,12 @@ export class ViaInteractiveViewProvider implements vscode.WebviewViewProvider {
       }
 
       if (message?.type === "clear") {
-        this.currentSource = "";
-        this.outputLines.length = 0;
-        await this.render();
+        await this.clear();
       }
     });
   }
 
-  private async runCurrentSource(): Promise<void> {
+  async runCurrentSource(): Promise<void> {
     const source = this.currentSource.trim();
     if (!source) {
       this.pushLine("error", t("interactive.empty"));
@@ -74,6 +72,21 @@ export class ViaInteractiveViewProvider implements vscode.WebviewViewProvider {
     }
 
     await this.render();
+  }
+
+  async clear(): Promise<void> {
+    this.currentSource = "";
+    this.outputLines.length = 0;
+    await this.render();
+  }
+
+  async focus(): Promise<void> {
+    if (!this.view) {
+      return;
+    }
+
+    this.view.show?.(true);
+    await this.view.webview.postMessage({ type: "focusInput" });
   }
 
   private pushLine(kind: OutputLine["kind"], text: string): void {
@@ -103,10 +116,7 @@ export class ViaInteractiveViewProvider implements vscode.WebviewViewProvider {
   private getHtml(): string {
     const nonce = getNonce();
     const title = escapeHtml(t("interactive.title"));
-    const subtitle = escapeHtml(t("interactive.subtitle"));
     const placeholder = escapeHtml(t("interactive.placeholder"));
-    const run = escapeHtml(t("interactive.run"));
-    const clear = escapeHtml(t("interactive.clear"));
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -117,12 +127,15 @@ export class ViaInteractiveViewProvider implements vscode.WebviewViewProvider {
     <title>${title}</title>
     <style>
       :root { color-scheme: light dark; }
-      body {
+      html, body {
         margin: 0;
         height: 100vh;
+      }
+      body {
         background: var(--vscode-editor-background);
         color: var(--vscode-editor-foreground);
-        font-family: var(--vscode-font-family);
+        font-family: var(--vscode-editor-font-family, var(--vscode-font-family));
+        font-size: var(--vscode-editor-font-size, 13px);
       }
       .shell {
         height: 100vh;
@@ -131,64 +144,46 @@ export class ViaInteractiveViewProvider implements vscode.WebviewViewProvider {
       }
       .output {
         overflow: auto;
-        padding: 12px;
-        border-bottom: 1px solid var(--vscode-panel-border);
+        padding: 8px 12px;
       }
       .input {
-        padding: 10px;
         display: grid;
-        gap: 8px;
-        background: var(--vscode-sideBar-background);
-      }
-      .title {
-        display: flex;
-        justify-content: space-between;
+        grid-template-columns: auto 1fr;
+        align-items: start;
         gap: 12px;
-        font-size: 12px;
-        color: var(--vscode-descriptionForeground);
-        margin-bottom: 10px;
+        padding: 8px 12px;
+        border-top: 1px solid var(--vscode-panel-border);
+        background: var(--vscode-editor-background);
       }
       .line {
         white-space: pre-wrap;
         word-break: break-word;
-        font-family: var(--vscode-editor-font-family, var(--vscode-font-family));
         font-size: 12px;
         line-height: 1.45;
-        padding: 2px 0;
+        padding: 1px 0;
       }
       .info { color: var(--vscode-editor-foreground); }
       .success { color: var(--vscode-terminal-ansiGreen); }
       .error { color: var(--vscode-terminal-ansiRed); }
+      .prompt {
+        color: var(--vscode-descriptionForeground);
+        line-height: 1.5;
+        user-select: none;
+      }
       textarea {
         width: 100%;
-        min-height: 110px;
-        resize: vertical;
-        border-radius: 6px;
-        border: 1px solid var(--vscode-panel-border);
-        background: var(--vscode-input-background);
-        color: var(--vscode-input-foreground);
-        padding: 10px;
+        min-height: 24px;
+        max-height: 160px;
+        resize: none;
+        border: 0;
+        outline: none;
+        background: transparent;
+        color: var(--vscode-editor-foreground);
+        padding: 0;
         box-sizing: border-box;
-        font-family: var(--vscode-editor-font-family, var(--vscode-font-family));
         font-size: 13px;
-      }
-      .actions {
-        display: flex;
-        gap: 8px;
-      }
-      button {
-        border: 1px solid var(--vscode-button-border, transparent);
-        border-radius: 4px;
-        padding: 6px 12px;
-        cursor: pointer;
-      }
-      .primary {
-        background: var(--vscode-button-background);
-        color: var(--vscode-button-foreground);
-      }
-      .secondary {
-        background: var(--vscode-button-secondaryBackground);
-        color: var(--vscode-button-secondaryForeground);
+        line-height: 1.5;
+        overflow: auto;
       }
       .empty {
         color: var(--vscode-descriptionForeground);
@@ -198,30 +193,24 @@ export class ViaInteractiveViewProvider implements vscode.WebviewViewProvider {
   </head>
   <body>
     <div class="shell">
-      <div class="output">
-        <div class="title">
-          <span>${subtitle}</span>
-          <span id="output-label"></span>
-        </div>
-        <div id="output-body"></div>
-      </div>
+      <div class="output" id="output-body"></div>
       <div class="input">
+        <div class="prompt">&gt;</div>
         <textarea id="source" spellcheck="false" placeholder="${placeholder}"></textarea>
-        <div class="actions">
-          <button class="primary" id="run">${run}</button>
-          <button class="secondary" id="clear">${clear}</button>
-        </div>
       </div>
     </div>
     <script nonce="${nonce}">
       const vscode = acquireVsCodeApi();
       const source = document.getElementById('source');
-      const run = document.getElementById('run');
-      const clear = document.getElementById('clear');
-      const outputLabel = document.getElementById('output-label');
       const outputBody = document.getElementById('output-body');
 
+      function syncHeight() {
+        source.style.height = 'auto';
+        source.style.height = Math.min(source.scrollHeight, 160) + 'px';
+      }
+
       source.addEventListener('input', () => {
+        syncHeight();
         vscode.postMessage({ type: 'updateSource', value: source.value });
       });
 
@@ -232,16 +221,18 @@ export class ViaInteractiveViewProvider implements vscode.WebviewViewProvider {
         }
       });
 
-      run.addEventListener('click', () => vscode.postMessage({ type: 'run' }));
-      clear.addEventListener('click', () => vscode.postMessage({ type: 'clear' }));
-
       window.addEventListener('message', (event) => {
+        if (event.data?.type === 'focusInput') {
+          source.focus();
+          return;
+        }
+
         if (event.data?.type !== 'render') {
           return;
         }
 
         source.value = event.data.source || '';
-        outputLabel.textContent = event.data.labels.output;
+        syncHeight();
         renderOutput(event.data);
         outputBody.scrollTop = outputBody.scrollHeight;
       });

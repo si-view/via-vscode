@@ -92,6 +92,18 @@
         "title": "VIA: Open Interactive SKILL",
         "category": "VIA",
         "icon": "$(terminal-view-icon)"
+      },
+      {
+        "command": "via.runInteractiveSkill",
+        "title": "VIA: Run Interactive SKILL",
+        "category": "VIA",
+        "icon": "$(play)"
+      },
+      {
+        "command": "via.clearInteractiveSkill",
+        "title": "VIA: Clear Interactive SKILL",
+        "category": "VIA",
+        "icon": "$(clear-all)"
       }
     ],
     "viewsContainers": {
@@ -225,6 +237,18 @@
           "group": "navigation@11"
         }
       ],
+      "view/title": [
+        {
+          "command": "via.runInteractiveSkill",
+          "when": "view == via.interactiveView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "via.clearInteractiveSkill",
+          "when": "view == via.interactiveView",
+          "group": "navigation@2"
+        }
+      ],
       "commandPalette": [
         {
           "command": "via.configureWorkspace"
@@ -252,6 +276,12 @@
         },
         {
           "command": "via.focusInteractiveView"
+        },
+        {
+          "command": "via.runInteractiveSkill"
+        },
+        {
+          "command": "via.clearInteractiveSkill"
         }
       ]
     },

@@ -6,6 +6,7 @@ import { ViaRunner } from "./viaRunner";
 export function activate(context: vscode.ExtensionContext): void {
   let runner = new ViaRunner(context);
   let codeLensProvider = new ViaCodeLensProvider();
+  const interactiveViewProvider = new ViaInteractiveViewProvider(context.extensionUri, runner);
   let codeLensDisposable = vscode.languages.registerCodeLensProvider(
     [{ language: "skill", scheme: "file" }],
     codeLensProvider,
@@ -16,7 +17,7 @@ export function activate(context: vscode.ExtensionContext): void {
     codeLensDisposable,
     vscode.window.registerWebviewViewProvider(
       ViaInteractiveViewProvider.viewType,
-      new ViaInteractiveViewProvider(context.extensionUri, runner),
+      interactiveViewProvider,
       { webviewOptions: { retainContextWhenHidden: true } },
     ),
     vscode.commands.registerCommand("via.configureWorkspace", () => runner.configureWorkspace()),
@@ -35,6 +36,16 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("via.focusInteractiveView", async () => {
       await vscode.commands.executeCommand("workbench.view.extension.viaPanel");
       await vscode.commands.executeCommand("via.interactiveView.focus");
+      await interactiveViewProvider.focus();
+    }),
+    vscode.commands.registerCommand("via.runInteractiveSkill", async () => {
+      await vscode.commands.executeCommand("workbench.view.extension.viaPanel");
+      await interactiveViewProvider.runCurrentSource();
+      await interactiveViewProvider.focus();
+    }),
+    vscode.commands.registerCommand("via.clearInteractiveSkill", async () => {
+      await interactiveViewProvider.clear();
+      await interactiveViewProvider.focus();
     }),
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (!event.affectsConfiguration("via.language")) {
