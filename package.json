@@ -21,6 +21,7 @@
     "Other"
   ],
   "activationEvents": [
+    "onStartupFinished",
     "onLanguage:skill",
     "onCommand:via.configureWorkspace",
     "onCommand:via.configureSession",
