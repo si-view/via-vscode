@@ -23,8 +23,8 @@
   "activationEvents": [
     "onLanguage:skill",
     "onCommand:via.configureSession",
-    "onCommand:via.selectKernel",
-    "onCommand:via.createKernel",
+    "onCommand:via.selectWorkspace",
+    "onCommand:via.createWorkspace",
     "onCommand:via.startKernel",
     "onCommand:via.runFile",
     "onCommand:via.runSelection"
@@ -34,25 +34,25 @@
     "commands": [
       {
         "command": "via.configureSession",
-        "title": "VIA: Configure Session",
+        "title": "VIA: Configure Workspace",
         "category": "VIA",
         "icon": "$(gear)"
       },
       {
-        "command": "via.selectKernel",
-        "title": "VIA: Select Kernel",
+        "command": "via.selectWorkspace",
+        "title": "VIA: Select Workspace",
         "category": "VIA",
         "icon": "$(server-process)"
       },
       {
-        "command": "via.createKernel",
-        "title": "VIA: New Kernel",
+        "command": "via.createWorkspace",
+        "title": "VIA: New Workspace",
         "category": "VIA",
         "icon": "$(add)"
       },
       {
         "command": "via.startKernel",
-        "title": "VIA: Start Kernel",
+        "title": "VIA: Start Workspace",
         "category": "VIA",
         "icon": "$(debug-start)"
       },
@@ -80,17 +80,17 @@
         "via.defaultWorkspace": {
           "type": "string",
           "default": "",
-          "description": "Default Virtuoso workspace path used when starting a via kernel."
+          "description": "Default Virtuoso workspace path used when starting via."
         },
         "via.defaultInstanceName": {
           "type": "string",
           "default": "vscode",
-          "description": "Default via instance name."
+          "description": "Default via instance name used behind the scenes."
         },
         "via.knownKernels": {
           "type": "array",
           "default": [],
-          "description": "Known via kernel presets shown in the kernel selector.",
+          "description": "Known via workspace presets shown in the workspace selector.",
           "items": {
             "type": "object",
             "properties": {
@@ -106,14 +106,14 @@
         "via.autoStartKernel": {
           "type": "boolean",
           "default": true,
-          "description": "Start the via kernel automatically before running a file or selection when needed."
+          "description": "Start via automatically for the selected workspace before running a file or selection when needed."
         }
       }
     },
     "menus": {
       "editor/title": [
         {
-          "command": "via.selectKernel",
+          "command": "via.selectWorkspace",
           "when": "resourceExtname == .il",
           "group": "navigation@9"
         },
@@ -136,10 +136,10 @@
           "command": "via.startKernel"
         },
         {
-          "command": "via.selectKernel"
+          "command": "via.selectWorkspace"
         },
         {
-          "command": "via.createKernel"
+          "command": "via.createWorkspace"
         },
         {
           "command": "via.runFile"

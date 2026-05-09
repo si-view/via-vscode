@@ -33,7 +33,7 @@ export class ViaRunner implements vscode.Disposable {
   private readonly statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
 
   constructor(private readonly context: vscode.ExtensionContext) {
-    this.statusBar.command = "via.selectKernel";
+    this.statusBar.command = "via.selectWorkspace";
     this.context.subscriptions.push(this.output, this.statusBar);
     this.updateStatusBar();
   }
@@ -45,10 +45,10 @@ export class ViaRunner implements vscode.Disposable {
 
   async configureSession(): Promise<void> {
     this.assertLinuxHost();
-    await this.promptForKernelSession(this.readSession());
+    await this.promptForWorkspaceSession(this.readSession(), true);
   }
 
-  async selectKernel(): Promise<void> {
+  async selectWorkspace(): Promise<void> {
     this.assertLinuxHost();
 
     const current = this.readSession();
@@ -57,27 +57,29 @@ export class ViaRunner implements vscode.Disposable {
     const merged = dedupeListedKernels(current, running, known);
 
     const picks: vscode.QuickPickItem[] = merged.map((item) => ({
-      label: item.instanceName === current.instanceName ? `$(check) ${item.instanceName}` : item.instanceName,
+      label: item.workspacePath || item.instanceName,
       description: item.status ? `status: ${item.status}` : undefined,
-      detail: item.workspacePath || "No workspace configured",
+      detail: item.instanceName === current.instanceName
+        ? `Current workspace • instance: ${item.instanceName}`
+        : `instance: ${item.instanceName}`,
     }));
 
     picks.push(
       {
-        label: "$(add) New Kernel...",
-        detail: "Create a new via kernel preset and select it",
+        label: "$(add) New Workspace...",
+        detail: "Create a new via workspace preset and select it",
       },
       {
-        label: "$(gear) Configure Current Kernel...",
-        detail: current.instanceName || current.workspacePath
-          ? `Edit ${current.instanceName || "current"}`
-          : "Set the current kernel name and workspace",
+        label: "$(gear) Configure Current Workspace...",
+        detail: current.workspacePath || current.instanceName
+          ? `Edit ${current.workspacePath || "current workspace"}`
+          : "Set the current via workspace",
       },
     );
 
     const picked = await vscode.window.showQuickPick(picks, {
-      title: "Select VIA Kernel",
-      placeHolder: "Choose a known kernel or create a new one",
+      title: "Select VIA Workspace",
+      placeHolder: "Choose a known workspace or create a new one",
       ignoreFocusOut: true,
     });
 
@@ -86,7 +88,7 @@ export class ViaRunner implements vscode.Disposable {
     }
 
     if (picked.label.startsWith("$(add)")) {
-      await this.createKernel();
+      await this.createWorkspace();
       return;
     }
 
@@ -95,18 +97,18 @@ export class ViaRunner implements vscode.Disposable {
       return;
     }
 
-    const selected = merged.find((item) => item.instanceName === stripCodiconPrefix(picked.label));
+    const selected = merged.find((item) => item.workspacePath === stripCodiconPrefix(picked.label));
     if (!selected) {
       return;
     }
 
     await this.setCurrentSession(selected);
-    void vscode.window.showInformationMessage(`VIA kernel set to ${selected.instanceName}.`);
+    void vscode.window.showInformationMessage(`VIA workspace set to ${selected.workspacePath}.`);
   }
 
-  async createKernel(): Promise<void> {
+  async createWorkspace(): Promise<void> {
     this.assertLinuxHost();
-    const created = await this.promptForKernelSession(this.readSession());
+    const created = await this.promptForWorkspaceSession(this.readSession(), false);
     if (!created) {
       return;
     }
@@ -115,15 +117,15 @@ export class ViaRunner implements vscode.Disposable {
       [
         {
           label: "Start Now",
-          detail: `Run via start --name ${created.instanceName}`,
+          detail: `Run via start for ${created.workspacePath}`,
         },
         {
           label: "Only Select",
-          detail: "Keep the kernel selected but do not start it now",
+          detail: "Keep the workspace selected but do not start it now",
         },
       ],
       {
-        title: "Kernel Created",
+        title: "Workspace Created",
         ignoreFocusOut: true,
       },
     );
@@ -144,14 +146,14 @@ export class ViaRunner implements vscode.Disposable {
     if (alreadyRunning) {
       this.output.appendLine(`[skip] via instance "${session.instanceName}" is already running.`);
       this.output.show(true);
-      void vscode.window.showInformationMessage(`VIA kernel "${session.instanceName}" is already running.`);
+      void vscode.window.showInformationMessage(`VIA workspace is already running.`);
       return;
     }
 
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: `Starting VIA kernel "${session.instanceName}"`,
+        title: `Starting VIA workspace ${basename(session.workspacePath)}`,
         cancellable: false,
       },
       async () => {
@@ -159,11 +161,11 @@ export class ViaRunner implements vscode.Disposable {
           ["start", "--name", session.instanceName, "--workspace", session.workspacePath],
           session.workspacePath,
         );
-        this.revealResult("Kernel start", result);
+        this.revealResult("Workspace start", result);
       },
     );
 
-    void vscode.window.showInformationMessage(`VIA kernel "${session.instanceName}" started.`);
+    void vscode.window.showInformationMessage(`VIA workspace started.`);
   }
 
   async runFile(uri?: vscode.Uri): Promise<void> {
@@ -293,11 +295,11 @@ export class ViaRunner implements vscode.Disposable {
     }
 
     const choice = await vscode.window.showWarningMessage(
-      `VIA kernel "${session.instanceName}" is not running.`,
-      "Start Kernel",
+      `The selected VIA workspace is not running.`,
+      "Start Workspace",
     );
 
-    if (choice !== "Start Kernel") {
+    if (choice !== "Start Workspace") {
       return undefined;
     }
 
@@ -311,7 +313,7 @@ export class ViaRunner implements vscode.Disposable {
       return session;
     }
 
-    await this.selectKernel();
+    await this.selectWorkspace();
     session = this.readSession();
     if (session.instanceName && session.workspacePath) {
       return session;
@@ -348,24 +350,14 @@ export class ViaRunner implements vscode.Disposable {
     this.updateStatusBar();
   }
 
-  private async promptForKernelSession(current: ViaSession): Promise<ViaSession | undefined> {
-    const defaultName = current.instanceName || this.getConfig<string>("defaultInstanceName") || "vscode";
-    const instanceName = await vscode.window.showInputBox({
-      title: "VIA Instance Name",
-      prompt: "Name of the via-managed Virtuoso instance",
-      value: defaultName,
-      ignoreFocusOut: true,
-      validateInput: (value) => (value.trim().length === 0 ? "Instance name is required." : undefined),
-    });
-
-    if (!instanceName) {
-      return undefined;
-    }
-
-    const defaultWorkspace = current.workspacePath || this.getConfig<string>("defaultWorkspace");
+  private async promptForWorkspaceSession(
+    current: ViaSession,
+    forceInstancePrompt: boolean,
+  ): Promise<ViaSession | undefined> {
+    const defaultWorkspace = current.workspacePath || this.getConfig<string>("defaultWorkspace") || getCurrentWorkspacePath();
     const defaultUri = defaultWorkspace ? vscode.Uri.file(defaultWorkspace) : undefined;
     const picked = await vscode.window.showOpenDialog({
-      title: "Select Virtuoso Workspace",
+      title: "Select VIA Workspace",
       defaultUri,
       canSelectFiles: false,
       canSelectFolders: true,
@@ -377,26 +369,44 @@ export class ViaRunner implements vscode.Disposable {
       return undefined;
     }
 
+    const selectedWorkspacePath = picked[0].fsPath;
+    const defaultName = current.instanceName
+      || this.getConfig<string>("defaultInstanceName")
+      || inferInstanceNameFromWorkspace(selectedWorkspacePath);
+    const instanceName = forceInstancePrompt
+      ? await vscode.window.showInputBox({
+        title: "VIA Instance Name",
+        prompt: "Optional via instance name used internally",
+        value: defaultName,
+        ignoreFocusOut: true,
+        validateInput: (value) => (value.trim().length === 0 ? "Instance name is required." : undefined),
+      })
+      : defaultName;
+
+    if (!instanceName) {
+      return undefined;
+    }
+
     const session = {
       instanceName: instanceName.trim(),
-      workspacePath: picked[0].fsPath,
+      workspacePath: selectedWorkspacePath,
     };
     await this.setCurrentSession(session);
-    void vscode.window.showInformationMessage(`VIA kernel set to ${session.instanceName}.`);
+    void vscode.window.showInformationMessage(`VIA workspace set to ${session.workspacePath}.`);
     return session;
   }
 
   private updateStatusBar(): void {
     const session = this.readSession();
     if (!session.instanceName || !session.workspacePath) {
-      this.statusBar.text = "$(server-process) Select Kernel";
-      this.statusBar.tooltip = "Choose or create a via kernel.";
+      this.statusBar.text = "$(folder-library) Select Workspace";
+      this.statusBar.tooltip = "Choose or create a via workspace.";
       this.statusBar.show();
       return;
     }
 
-    this.statusBar.text = `$(server-process) ${session.instanceName} $(chevron-down)`;
-    this.statusBar.tooltip = `Workspace: ${session.workspacePath}`;
+    this.statusBar.text = `$(folder-library) ${basename(session.workspacePath)} $(chevron-down)`;
+    this.statusBar.tooltip = `Workspace: ${session.workspacePath}\nInstance: ${session.instanceName}`;
     this.statusBar.show();
   }
 
@@ -618,6 +628,21 @@ function parseListedKernels(stdout: string): ListedKernel[] {
 
 function stripCodiconPrefix(label: string): string {
   return label.replace(/^\$\([^)]+\)\s*/, "");
+}
+
+function getCurrentWorkspacePath(): string {
+  return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || "";
+}
+
+function inferInstanceNameFromWorkspace(workspacePath: string): string {
+  const name = basename(workspacePath).trim();
+  return name || "vscode";
+}
+
+function basename(path: string): string {
+  const normalized = path.replace(/\\/g, "/").replace(/\/+$/, "");
+  const parts = normalized.split("/");
+  return parts[parts.length - 1] || normalized;
 }
 
 function toErrorMessage(error: unknown): string {
