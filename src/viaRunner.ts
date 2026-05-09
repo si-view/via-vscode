@@ -25,6 +25,13 @@ type ViaResponse = {
   data?: unknown;
 };
 
+export type InteractiveRunResult = {
+  source: string;
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+};
+
 type ViaWorkspace = {
   instanceName: string;
   workspacePath: string;
@@ -468,19 +475,20 @@ export class ViaRunner implements vscode.Disposable {
     void vscode.window.showInformationMessage(t("info.selectionExecuted"));
   }
 
-  async runInteractiveSkill(source: string): Promise<void> {
+  async runInteractiveSkill(source: string): Promise<InteractiveRunResult> {
     this.assertLinuxHost();
     const workspace = await this.ensureWorkspaceReady();
     if (!workspace) {
-      return;
+      throw new Error("Workspace is not ready.");
     }
 
     const normalizedSource = normalizeEvalSource(source);
     if (normalizedSource.length === 0) {
       void vscode.window.showWarningMessage(t("interactive.empty"));
-      return;
+      throw new Error(t("interactive.empty"));
     }
 
+    let finalResult: ViaCommandResult | undefined;
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
@@ -491,6 +499,7 @@ export class ViaRunner implements vscode.Disposable {
         const result = shouldUseEvalMode(normalizedSource)
           ? await this.runSelectionAsEval(workspace, normalizedSource)
           : await this.runSelectionAsTempFile(workspace, normalizedSource);
+        finalResult = result;
         const response = parseJson(result.stdout);
         if (response?.ok === false) {
           throw new Error(response.reason || "via send returned an error.");
@@ -501,6 +510,13 @@ export class ViaRunner implements vscode.Disposable {
     this.connectionState = this.knownRunningState ? "running" : this.connectionState;
     this.connectionDetail = this.knownRunningState ? t("label.connected") : this.connectionDetail;
     this.updateStatusBar();
+
+    return {
+      source: normalizedSource,
+      stdout: finalResult?.stdout || "",
+      stderr: finalResult?.stderr || "",
+      exitCode: finalResult?.exitCode || 0,
+    };
   }
 
   private assertLinuxHost(): void {

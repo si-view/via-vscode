@@ -1,12 +1,22 @@
 import * as vscode from "vscode";
 import { t } from "./i18n";
-import { ViaRunner } from "./viaRunner";
+import { InteractiveRunResult, ViaRunner } from "./viaRunner";
+
+type HistoryEntry = {
+  source: string;
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+  error?: string;
+  timestamp: string;
+};
 
 export class ViaInteractiveViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = "via.interactiveView";
 
   private view: vscode.WebviewView | undefined;
   private currentSource = "";
+  private readonly history: HistoryEntry[] = [];
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -24,7 +34,9 @@ export class ViaInteractiveViewProvider implements vscode.WebviewViewProvider {
     webviewView.webview.options = {
       enableScripts: true,
     };
-    webviewView.webview.html = this.getHtml(webviewView.webview);
+    webviewView.webview.html = this.getHtml();
+    void this.render();
+
     webviewView.webview.onDidReceiveMessage(async (message) => {
       if (message?.type === "updateSource") {
         this.currentSource = String(message.value || "");
@@ -32,20 +44,73 @@ export class ViaInteractiveViewProvider implements vscode.WebviewViewProvider {
       }
 
       if (message?.type === "run") {
-        await this.runner.runInteractiveSkill(this.currentSource);
+        await this.runCurrentSource();
         return;
       }
 
       if (message?.type === "clear") {
         this.currentSource = "";
-        webviewView.webview.postMessage({ type: "setSource", value: "" });
+        await this.render();
       }
     });
   }
 
-  private getHtml(webview: vscode.Webview): string {
+  private async runCurrentSource(): Promise<void> {
+    try {
+      const result = await this.runner.runInteractiveSkill(this.currentSource);
+      this.pushHistory(result);
+    } catch (error) {
+      this.pushHistory({
+        source: this.currentSource,
+        stdout: "",
+        stderr: "",
+        exitCode: 1,
+        error: error instanceof Error ? error.message : String(error),
+        timestamp: formatTimestamp(),
+      });
+    }
+
+    await this.render();
+  }
+
+  private pushHistory(result: InteractiveRunResult | HistoryEntry): void {
+    this.history.unshift({
+      source: result.source,
+      stdout: result.stdout,
+      stderr: result.stderr,
+      exitCode: result.exitCode,
+      error: "error" in result ? result.error : undefined,
+      timestamp: "timestamp" in result ? result.timestamp : formatTimestamp(),
+    });
+
+    if (this.history.length > 50) {
+      this.history.length = 50;
+    }
+  }
+
+  private async render(): Promise<void> {
+    if (!this.view) {
+      return;
+    }
+
+    await this.view.webview.postMessage({
+      type: "render",
+      source: this.currentSource,
+      labels: {
+        history: t("interactive.history"),
+        emptyHistory: t("interactive.emptyHistory"),
+        stdout: t("interactive.stdout"),
+        stderr: t("interactive.stderr"),
+        error: t("interactive.error"),
+      },
+      history: this.history,
+    });
+  }
+
+  private getHtml(): string {
     const nonce = getNonce();
     const title = escapeHtml(t("interactive.title"));
+    const subtitle = escapeHtml(t("interactive.subtitle"));
     const placeholder = escapeHtml(t("interactive.placeholder"));
     const run = escapeHtml(t("interactive.run"));
     const clear = escapeHtml(t("interactive.clear"));
@@ -71,12 +136,20 @@ export class ViaInteractiveViewProvider implements vscode.WebviewViewProvider {
       .shell {
         height: 100vh;
         display: grid;
-        grid-template-rows: auto 1fr auto;
+        grid-template-rows: auto 180px auto 1fr;
         gap: 8px;
         padding: 10px;
         box-sizing: border-box;
       }
       .title {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .title strong {
+        font-size: 13px;
+      }
+      .title span {
         font-size: 12px;
         color: var(--vscode-descriptionForeground);
       }
@@ -112,15 +185,71 @@ export class ViaInteractiveViewProvider implements vscode.WebviewViewProvider {
         background: var(--vscode-button-secondaryBackground);
         color: var(--vscode-button-secondaryForeground);
       }
+      .history {
+        overflow: auto;
+        border-top: 1px solid var(--vscode-panel-border);
+        padding-top: 8px;
+      }
+      .history-title {
+        font-size: 12px;
+        color: var(--vscode-descriptionForeground);
+        margin-bottom: 8px;
+      }
+      .entry {
+        border: 1px solid var(--vscode-panel-border);
+        border-radius: 6px;
+        padding: 10px;
+        margin-bottom: 8px;
+        background: var(--vscode-sideBar-background);
+      }
+      .entry-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 8px;
+        font-size: 12px;
+        color: var(--vscode-descriptionForeground);
+      }
+      pre {
+        margin: 0;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-family: var(--vscode-editor-font-family, var(--vscode-font-family));
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      .section {
+        margin-top: 8px;
+      }
+      .section-label {
+        font-size: 11px;
+        text-transform: uppercase;
+        color: var(--vscode-descriptionForeground);
+        margin-bottom: 4px;
+      }
+      .empty {
+        color: var(--vscode-descriptionForeground);
+        font-size: 12px;
+      }
+      .error {
+        color: var(--vscode-errorForeground);
+      }
     </style>
   </head>
   <body>
     <div class="shell">
-      <div class="title">${title}</div>
+      <div class="title">
+        <strong>${title}</strong>
+        <span>${subtitle}</span>
+      </div>
       <textarea id="source" spellcheck="false" placeholder="${placeholder}"></textarea>
       <div class="actions">
         <button class="primary" id="run">${run}</button>
         <button class="secondary" id="clear">${clear}</button>
+      </div>
+      <div class="history">
+        <div class="history-title" id="history-title"></div>
+        <div id="history-body"></div>
       </div>
     </div>
     <script nonce="${nonce}">
@@ -128,6 +257,8 @@ export class ViaInteractiveViewProvider implements vscode.WebviewViewProvider {
       const source = document.getElementById('source');
       const run = document.getElementById('run');
       const clear = document.getElementById('clear');
+      const historyTitle = document.getElementById('history-title');
+      const historyBody = document.getElementById('history-body');
 
       source.addEventListener('input', () => {
         vscode.postMessage({ type: 'updateSource', value: source.value });
@@ -149,10 +280,53 @@ export class ViaInteractiveViewProvider implements vscode.WebviewViewProvider {
       });
 
       window.addEventListener('message', (event) => {
-        if (event.data?.type === 'setSource') {
-          source.value = event.data.value || '';
+        if (event.data?.type !== 'render') {
+          return;
         }
+
+        source.value = event.data.source || '';
+        historyTitle.textContent = event.data.labels.history;
+
+        if (!event.data.history || event.data.history.length === 0) {
+          historyBody.innerHTML = '<div class="empty">' + escapeHtml(event.data.labels.emptyHistory) + '</div>';
+          return;
+        }
+
+        historyBody.innerHTML = event.data.history.map((entry) => {
+          const sections = [];
+          sections.push(section('code', entry.source || ''));
+          if (entry.stdout) {
+            sections.push(section(event.data.labels.stdout, entry.stdout));
+          }
+          if (entry.stderr) {
+            sections.push(section(event.data.labels.stderr, entry.stderr));
+          }
+          if (entry.error) {
+            sections.push(section(event.data.labels.error, entry.error, true));
+          }
+
+          return '<div class="entry">'
+            + '<div class="entry-header"><span>exit ' + entry.exitCode + '</span><span>' + escapeHtml(entry.timestamp) + '</span></div>'
+            + sections.join('')
+            + '</div>';
+        }).join('');
       });
+
+      function section(label, content, isError) {
+        return '<div class="section">'
+          + '<div class="section-label' + (isError ? ' error' : '') + '">' + escapeHtml(label) + '</div>'
+          + '<pre' + (isError ? ' class="error"' : '') + '>' + escapeHtml(content) + '</pre>'
+          + '</div>';
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      }
     </script>
   </body>
 </html>`;
@@ -175,4 +349,8 @@ function escapeHtml(value: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function formatTimestamp(): string {
+  return new Date().toLocaleTimeString();
 }
