@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { EOL } from "node:os";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -11,6 +12,11 @@ const execFileAsync = promisify(execFile);
 type ViaCommandResult = {
   stdout: string;
   stderr: string;
+  exitCode: number;
+};
+
+type ViaRunOptions = {
+  revealInTerminal?: boolean;
 };
 
 type ViaResponse = {
@@ -53,6 +59,7 @@ const STATUS_BAR_ID = "via.status";
 export class ViaRunner implements vscode.Disposable {
   private readonly output = vscode.window.createOutputChannel("VIA Runner");
   private readonly statusBar = vscode.window.createStatusBarItem(STATUS_BAR_ID, vscode.StatusBarAlignment.Right, 10_000);
+  private activeExecutionTerminal: vscode.Terminal | undefined;
   private connectionState: ConnectionState = "unconfigured";
   private connectionDetail = "";
   private lastCommandSummary = "none";
@@ -67,6 +74,11 @@ export class ViaRunner implements vscode.Disposable {
     };
     this.context.subscriptions.push(this.output, this.statusBar);
     this.context.subscriptions.push(
+      vscode.window.onDidCloseTerminal((terminal) => {
+        if (terminal === this.activeExecutionTerminal) {
+          this.activeExecutionTerminal = undefined;
+        }
+      }),
       vscode.window.onDidChangeActiveTextEditor(() => this.renderStatusBar()),
       vscode.window.onDidChangeVisibleTextEditors(() => this.renderStatusBar()),
       vscode.window.onDidChangeWindowState(() => this.renderStatusBar()),
@@ -90,6 +102,7 @@ export class ViaRunner implements vscode.Disposable {
   }
 
   dispose(): void {
+    this.activeExecutionTerminal?.dispose();
     this.statusBar.dispose();
     this.output.dispose();
   }
@@ -347,6 +360,7 @@ export class ViaRunner implements vscode.Disposable {
         const result = await this.runVia(
           ["start", "--name", workspace.instanceName, "--workspace", workspace.workspacePath],
           workspace.workspacePath,
+          { revealInTerminal: true },
         );
         this.revealResult(t("option.startWorkspace"), result);
       },
@@ -399,6 +413,7 @@ export class ViaRunner implements vscode.Disposable {
         const result = await this.runVia(
           ["send", "--name", workspace.instanceName, "--load", editor.document.fileName],
           workspace.workspacePath,
+          { revealInTerminal: true },
         );
         this.revealResult(t("codelens.runFile"), result);
       },
@@ -663,7 +678,7 @@ export class ViaRunner implements vscode.Disposable {
 
   private async listWorkspaces(): Promise<ListedWorkspace[]> {
     try {
-      const result = await this.runVia(["list"]);
+      const result = await this.runVia(["list"], undefined, { revealInTerminal: false });
       return parseListedWorkspaces(result.stdout);
     } catch (error) {
       this.output.appendLine(`[warn] failed to inspect via list: ${toErrorMessage(error)}`);
@@ -681,13 +696,28 @@ export class ViaRunner implements vscode.Disposable {
     }
   }
 
-  private async runVia(args: string[], cwd?: string): Promise<ViaCommandResult> {
+  private async runVia(
+    args: string[],
+    cwd?: string,
+    options: ViaRunOptions = { revealInTerminal: false },
+  ): Promise<ViaCommandResult> {
+    return this.runViaWithOptions(args, cwd, options);
+  }
+
+  private async runViaWithOptions(
+    args: string[],
+    cwd: string | undefined,
+    options: ViaRunOptions,
+  ): Promise<ViaCommandResult> {
     const commandPath = this.getConfig<string>("commandPath") || "via";
     this.output.appendLine(`$ ${commandPath} ${args.join(" ")}`);
     this.lastCommandSummary = `${commandPath} ${args.join(" ")}`;
     const env = this.buildViaEnv();
+    const terminal = options.revealInTerminal ? this.createExecutionTerminal(cwd, env) : undefined;
+    const shellQuotedCommand = terminal ? formatShellCommand(commandPath, args) : "";
 
     try {
+      terminal?.writeLine(`$ ${shellQuotedCommand}`);
       const result = await execFileAsync(commandPath, args, {
         cwd,
         env,
@@ -695,10 +725,29 @@ export class ViaRunner implements vscode.Disposable {
         maxBuffer: 1024 * 1024 * 8,
       });
 
+      if (terminal) {
+        this.writeTerminalOutput(terminal, result.stdout, result.stderr);
+        terminal.writeLine("");
+        terminal.writeLine("[exit 0]");
+        terminal.closeTerminal(0);
+      }
       this.writeCommandOutput(result.stdout, result.stderr);
-      return result;
+      return {
+        stdout: result.stdout,
+        stderr: result.stderr,
+        exitCode: 0,
+      };
     } catch (error) {
       const failure = error as NodeJS.ErrnoException & Partial<ViaCommandResult>;
+      const stdout = failure.stdout || "";
+      const stderr = failure.stderr || "";
+      const exitCode = typeof failure.code === "number" ? failure.code : 1;
+      if (terminal) {
+        this.writeTerminalOutput(terminal, stdout, stderr);
+        terminal.writeLine("");
+        terminal.writeLine(`[exit ${exitCode}]`);
+        terminal.closeTerminal(exitCode);
+      }
       this.writeCommandOutput(failure.stdout || "", failure.stderr || "");
       this.output.show(true);
       throw new Error(`via command failed: ${toErrorMessage(error)}`);
@@ -711,9 +760,10 @@ export class ViaRunner implements vscode.Disposable {
   ): Promise<ViaCommandResult> {
     this.output.appendLine("[selection-mode] eval");
     this.lastSelectionMode = "eval";
-    return this.runVia(
+    return this.runViaWithOptions(
       ["send", "--name", workspace.instanceName, "--eval", source],
       workspace.workspacePath,
+      { revealInTerminal: true },
     );
   }
 
@@ -729,9 +779,10 @@ export class ViaRunner implements vscode.Disposable {
       this.lastSelectionMode = "load-temp-file";
       this.output.appendLine("[selection-mode] load-temp-file");
       this.output.appendLine(`[selection-file] ${tempFile}`);
-      return await this.runVia(
+      return await this.runViaWithOptions(
         ["send", "--name", workspace.instanceName, "--load", tempFile],
         workspace.workspacePath,
+        { revealInTerminal: true },
       );
     } finally {
       await rm(tempDir, { recursive: true, force: true });
@@ -754,6 +805,29 @@ export class ViaRunner implements vscode.Disposable {
       this.output.appendLine("[done] no output returned");
     }
     this.output.show(true);
+  }
+
+  private createExecutionTerminal(cwd: string | undefined, env: NodeJS.ProcessEnv): TerminalSession {
+    this.activeExecutionTerminal?.dispose();
+
+    const session = new TerminalSession("VIA Runner", cwd, env);
+    const terminal = vscode.window.createTerminal({
+      name: "VIA Runner",
+      pty: session,
+    });
+    this.activeExecutionTerminal = terminal;
+    terminal.show(true);
+    return session;
+  }
+
+  private writeTerminalOutput(terminal: TerminalSession, stdout: string, stderr: string): void {
+    if (stdout.trim().length > 0) {
+      terminal.write(stdout);
+    }
+
+    if (stderr.trim().length > 0) {
+      terminal.write(stderr);
+    }
   }
 
   private getAutoStartWorkspace(): boolean {
@@ -916,6 +990,51 @@ export class ViaRunner implements vscode.Disposable {
       default:
         return t("label.selectionModeNone");
     }
+  }
+}
+
+class TerminalSession implements vscode.Pseudoterminal {
+  private readonly writeEmitter = new vscode.EventEmitter<string>();
+  private readonly closeEmitter = new vscode.EventEmitter<number>();
+
+  readonly onDidWrite: vscode.Event<string> = this.writeEmitter.event;
+  readonly onDidClose?: vscode.Event<number> = this.closeEmitter.event;
+
+  constructor(
+    private readonly name: string,
+    private readonly cwd: string | undefined,
+    private readonly env: NodeJS.ProcessEnv,
+  ) {}
+
+  open(): void {
+    const lines = [
+      `VIA Runner`,
+      this.cwd ? `cwd: ${this.cwd}` : undefined,
+      `DISPLAY: ${this.env.DISPLAY || "<unset>"}`,
+      "",
+    ].filter(Boolean);
+    this.write(lines.join(EOL));
+    this.write(EOL);
+  }
+
+  close(): void {}
+
+  handleInput(): void {}
+
+  write(content: string): void {
+    if (!content) {
+      return;
+    }
+
+    this.writeEmitter.fire(normalizeTerminalText(content));
+  }
+
+  writeLine(content: string): void {
+    this.write(`${content}${EOL}`);
+  }
+
+  closeTerminal(code = 0): void {
+    this.closeEmitter.fire(code);
   }
 }
 
@@ -1148,4 +1267,20 @@ function toErrorMessage(error: unknown): string {
   }
 
   return String(error);
+}
+
+function formatShellCommand(commandPath: string, args: string[]): string {
+  return [commandPath, ...args].map(shellQuote).join(" ");
+}
+
+function shellQuote(value: string): string {
+  if (/^[A-Za-z0-9_./:=+-]+$/.test(value)) {
+    return value;
+  }
+
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+function normalizeTerminalText(content: string): string {
+  return content.replace(/\r?\n/g, "\r\n");
 }
