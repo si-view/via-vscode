@@ -26,6 +26,8 @@
     "onCommand:via.configureSession",
     "onCommand:via.selectWorkspace",
     "onCommand:via.createWorkspace",
+    "onCommand:via.showStatusMenu",
+    "onCommand:via.refreshConnectionStatus",
     "onCommand:via.startWorkspace",
     "onCommand:via.startKernel",
     "onCommand:via.runFile",
@@ -57,6 +59,12 @@
         "title": "VIA: Start Workspace",
         "category": "VIA",
         "icon": "$(debug-start)"
+      },
+      {
+        "command": "via.refreshConnectionStatus",
+        "title": "VIA: Refresh Connection Status",
+        "category": "VIA",
+        "icon": "$(refresh)"
       },
       {
         "command": "via.runFile",
@@ -180,6 +188,9 @@
         },
         {
           "command": "via.startWorkspace"
+        },
+        {
+          "command": "via.refreshConnectionStatus"
         },
         {
           "command": "via.selectWorkspace"

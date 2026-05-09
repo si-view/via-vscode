@@ -47,7 +47,7 @@ export class ViaRunner implements vscode.Disposable {
   private connectionDetail = "";
 
   constructor(private readonly context: vscode.ExtensionContext) {
-    this.statusBar.command = "via.selectWorkspace";
+    this.statusBar.command = "via.showStatusMenu";
     this.context.subscriptions.push(this.output, this.statusBar);
     this.updateStatusBar();
     void this.refreshConnectionState();
@@ -56,6 +56,60 @@ export class ViaRunner implements vscode.Disposable {
   dispose(): void {
     this.statusBar.dispose();
     this.output.dispose();
+  }
+
+  async showStatusMenu(): Promise<void> {
+    const picked = await vscode.window.showQuickPick(
+      [
+        {
+          label: "Refresh Connection Status",
+          detail: "Re-check the current via workspace state",
+          action: "refresh",
+        },
+        {
+          label: "Select Workspace",
+          detail: "Switch to another via workspace",
+          action: "select",
+        },
+        {
+          label: "Start Workspace",
+          detail: "Start the current via workspace",
+          action: "start",
+        },
+        {
+          label: "Configure Workspace",
+          detail: "Edit workspace, internal name, and DISPLAY settings",
+          action: "configure",
+        },
+      ],
+      {
+        title: "VIA Status Bar",
+        ignoreFocusOut: true,
+      },
+    );
+
+    if (!picked) {
+      return;
+    }
+
+    if (picked.action === "refresh") {
+      await this.refreshConnectionStatus();
+      return;
+    }
+
+    if (picked.action === "select") {
+      await this.selectWorkspace();
+      return;
+    }
+
+    if (picked.action === "start") {
+      await this.startWorkspace();
+      return;
+    }
+
+    if (picked.action === "configure") {
+      await this.configureWorkspace();
+    }
   }
 
   async configureWorkspace(): Promise<void> {
@@ -635,6 +689,11 @@ export class ViaRunner implements vscode.Disposable {
     }
 
     this.updateStatusBar();
+  }
+
+  async refreshConnectionStatus(): Promise<void> {
+    await this.refreshConnectionState();
+    void vscode.window.setStatusBarMessage("VIA connection status refreshed.", 2500);
   }
 
   private async configureDisplaySettings(): Promise<void> {
