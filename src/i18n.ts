@@ -21,11 +21,13 @@ type MessageKey =
   | "error.customDisplayRequired"
   | "error.instanceNameRequired"
   | "error.linuxOnly"
+  | "error.loadOnSaveFailed"
   | "error.mustSaveFile"
   | "error.onlyIlFiles"
   | "error.openIlEditor"
   | "error.saveBeforeRun"
   | "info.connectionStatusRefreshed"
+  | "info.loadOnSaveSucceeded"
   | "info.selectionExecuted"
   | "info.workspaceAlreadyRunning"
   | "info.workspaceLoaded"
@@ -50,6 +52,7 @@ type MessageKey =
   | "label.checking"
   | "label.connected"
   | "label.connection"
+  | "label.current"
   | "label.currentValue"
   | "label.editPath"
   | "label.detail"
@@ -89,6 +92,12 @@ type MessageKey =
   | "prompt.instanceName"
   | "prompt.readOnlyDiagnostics"
   | "prompt.selectWorkspace"
+  | "session.empty"
+  | "session.kill"
+  | "session.killConfirm"
+  | "session.killed"
+  | "session.select"
+  | "session.workspaceUnavailable"
   | "status.menu.configure.detail"
   | "status.menu.configure.label"
   | "status.menu.details.detail"
@@ -132,11 +141,13 @@ const messages: Record<"en" | "zh", Messages> = {
     "error.customDisplayRequired": "via.displayValue must be set when via.displayMode is custom.",
     "error.instanceNameRequired": "Instance name is required.",
     "error.linuxOnly": "VIA Runner requires the extension host to run on Linux.",
+    "error.loadOnSaveFailed": "VIA load on save failed: {reason}",
     "error.mustSaveFile": "The file must be saved before running it with via.",
     "error.onlyIlFiles": "VIA Runner only supports .il files.",
     "error.openIlEditor": "Open a .il editor to run selected code.",
     "error.saveBeforeRun": "Save the .il file before running it with via.",
     "info.connectionStatusRefreshed": "VIA connection status refreshed.",
+    "info.loadOnSaveSucceeded": "VIA loaded {name} on save.",
     "info.selectionExecuted": "VIA selection executed.",
     "info.workspaceAlreadyRunning": "VIA workspace is already running.",
     "info.workspaceLoaded": "VIA loaded {path}.",
@@ -161,6 +172,7 @@ const messages: Record<"en" | "zh", Messages> = {
     "label.checking": "Checking",
     "label.connected": "Connected",
     "label.connection": "Connection",
+    "label.current": "Current",
     "label.currentValue": "Current value: {value}",
     "label.editPath": "Edit {path}",
     "label.detail": "Detail",
@@ -200,6 +212,12 @@ const messages: Record<"en" | "zh", Messages> = {
     "prompt.instanceName": "Internal via instance name",
     "prompt.readOnlyDiagnostics": "Read-only diagnostics for the current VIA workspace",
     "prompt.selectWorkspace": "Choose a known workspace or create a new one",
+    "session.empty": "No running Virtuoso sessions",
+    "session.kill": "Kill Session",
+    "session.killConfirm": "Kill VIA session {name}?",
+    "session.killed": "VIA session {name} killed.",
+    "session.select": "Select Session",
+    "session.workspaceUnavailable": "Workspace path not reported",
     "status.menu.configure.detail": "Edit workspace, internal name, and DISPLAY settings",
     "status.menu.configure.label": "Configure Workspace",
     "status.menu.details.detail": "Display workspace, connection, DISPLAY, and recent command details",
@@ -240,11 +258,13 @@ const messages: Record<"en" | "zh", Messages> = {
     "error.customDisplayRequired": "当 via.displayMode 为 custom 时，必须设置 via.displayValue。",
     "error.instanceNameRequired": "必须填写实例名。",
     "error.linuxOnly": "VIA Runner 要求扩展宿主运行在 Linux 上。",
+    "error.loadOnSaveFailed": "保存时 VIA 加载失败：{reason}",
     "error.mustSaveFile": "运行前必须先保存该文件。",
     "error.onlyIlFiles": "VIA Runner 仅支持 .il 文件。",
     "error.openIlEditor": "请先打开 .il 编辑器再运行选中的代码。",
     "error.saveBeforeRun": "使用 via 运行前请先保存 .il 文件。",
     "info.connectionStatusRefreshed": "VIA 连接状态已刷新。",
+    "info.loadOnSaveSucceeded": "保存时已通过 VIA 加载 {name}。",
     "info.selectionExecuted": "VIA 选中代码已执行。",
     "info.workspaceAlreadyRunning": "VIA 工作区已经在运行中。",
     "info.workspaceLoaded": "VIA 已加载 {path}。",
@@ -269,6 +289,7 @@ const messages: Record<"en" | "zh", Messages> = {
     "label.checking": "检查中",
     "label.connected": "已连接",
     "label.connection": "连接状态",
+    "label.current": "当前",
     "label.currentValue": "当前值：{value}",
     "label.editPath": "编辑 {path}",
     "label.detail": "详情",
@@ -308,6 +329,12 @@ const messages: Record<"en" | "zh", Messages> = {
     "prompt.instanceName": "via 内部实例名",
     "prompt.readOnlyDiagnostics": "当前 VIA 工作区的只读诊断信息",
     "prompt.selectWorkspace": "选择已有工作区，或新建一个工作区",
+    "session.empty": "没有正在运行的 Virtuoso session",
+    "session.kill": "停止 Session",
+    "session.killConfirm": "停止 VIA session {name}？",
+    "session.killed": "VIA session {name} 已停止。",
+    "session.select": "选择 Session",
+    "session.workspaceUnavailable": "未返回 workspace 路径",
     "status.menu.configure.detail": "编辑工作区、内部实例名和 DISPLAY 设置",
     "status.menu.configure.label": "配置工作区",
     "status.menu.details.detail": "显示工作区、连接、DISPLAY 和最近命令详情",

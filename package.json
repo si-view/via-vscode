@@ -30,11 +30,16 @@
     "onCommand:via.showStatusMenu",
     "onCommand:via.showStatusDetails",
     "onCommand:via.refreshConnectionStatus",
+    "onCommand:via.refreshSessions",
+    "onCommand:via.selectSession",
+    "onCommand:via.killSession",
+    "onCommand:via.startWorkspaceFromSessions",
     "onCommand:via.startWorkspace",
     "onCommand:via.startKernel",
     "onCommand:via.runFile",
     "onCommand:via.runSelection",
-    "onView:via.interactiveView"
+    "onView:via.interactiveView",
+    "onView:via.sessionsView"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -104,9 +109,40 @@
         "title": "VIA: Clear Interactive SKILL",
         "category": "VIA",
         "icon": "$(clear-all)"
+      },
+      {
+        "command": "via.refreshSessions",
+        "title": "VIA: Refresh Sessions",
+        "category": "VIA",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "via.selectSession",
+        "title": "VIA: Select Session",
+        "category": "VIA",
+        "icon": "$(check)"
+      },
+      {
+        "command": "via.killSession",
+        "title": "VIA: Kill Session",
+        "category": "VIA",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "via.startWorkspaceFromSessions",
+        "title": "VIA: Start Workspace",
+        "category": "VIA",
+        "icon": "$(debug-start)"
       }
     ],
     "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "viaSidebar",
+          "title": "VIA",
+          "icon": "$(terminal-view-icon)"
+        }
+      ],
       "panel": [
         {
           "id": "viaPanel",
@@ -116,6 +152,12 @@
       ]
     },
     "views": {
+      "viaSidebar": [
+        {
+          "id": "via.sessionsView",
+          "name": "Virtuoso Sessions"
+        }
+      ],
       "viaPanel": [
         {
           "type": "webview",
@@ -205,6 +247,11 @@
           "default": true,
           "description": "Start via automatically for the selected workspace before running a file or selection when needed."
         },
+        "via.loadOnSave": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically load saved .il files with via send --load."
+        },
         "via.useDisplay": {
           "type": "boolean",
           "default": true,
@@ -220,6 +267,13 @@
       }
     },
     "menus": {
+      "editor/context": [
+        {
+          "command": "via.runSelection",
+          "when": "resourceExtname == .il && editorHasSelection",
+          "group": "navigation@10"
+        }
+      ],
       "editor/title": [
         {
           "command": "via.selectWorkspace",
@@ -239,6 +293,16 @@
       ],
       "view/title": [
         {
+          "command": "via.refreshSessions",
+          "when": "view == via.sessionsView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "via.startWorkspaceFromSessions",
+          "when": "view == via.sessionsView",
+          "group": "navigation@2"
+        },
+        {
           "command": "via.runInteractiveSkill",
           "when": "view == via.interactiveView",
           "group": "navigation@1"
@@ -247,6 +311,18 @@
           "command": "via.clearInteractiveSkill",
           "when": "view == via.interactiveView",
           "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "via.selectSession",
+          "when": "view == via.sessionsView && viewItem == viaSession",
+          "group": "inline@1"
+        },
+        {
+          "command": "via.killSession",
+          "when": "view == via.sessionsView && viewItem == viaSession",
+          "group": "inline@2"
         }
       ],
       "commandPalette": [
@@ -258,6 +334,9 @@
         },
         {
           "command": "via.refreshConnectionStatus"
+        },
+        {
+          "command": "via.refreshSessions"
         },
         {
           "command": "via.showStatusDetails"
