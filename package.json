@@ -1,10 +1,11 @@
 {
   "name": "via-vscode",
-  "displayName": "VIA Runner",
-  "description": "Run Virtuoso .il files and code snippets through the via CLI from VS Code.",
+  "displayName": "SKILL Runner",
+  "description": "Run Cadence SKILL.",
   "version": "0.0.1",
   "publisher": "si-view",
   "license": "MIT",
+  "icon": "media/icon.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/si-view/via-vscode.git"
@@ -167,12 +168,12 @@
       ]
     },
     "configuration": {
-      "title": "VIA Runner",
+      "title": "SKILL Runner",
       "properties": {
         "via.commandPath": {
           "type": "string",
-          "default": "via",
-          "description": "Path to the via executable."
+          "default": "",
+          "description": "Path to the via executable. Leave empty to use the via binary bundled with this extension."
         },
         "via.language": {
           "type": "string",
@@ -182,7 +183,7 @@
             "zh"
           ],
           "default": "auto",
-          "markdownDescription": "Language used by the VIA Runner runtime UI. `auto` follows the VS Code display language."
+          "markdownDescription": "Language used by the SKILL Runner runtime UI. `auto` follows the VS Code display language."
         },
         "via.defaultWorkspace": {
           "type": "string",
@@ -208,6 +209,24 @@
           "type": "string",
           "default": "",
           "description": "DISPLAY value used when via.displayMode is set to custom, for example :0 or localhost:10.0."
+        },
+        "via.environmentScript": {
+          "type": "string",
+          "default": "",
+          "description": "Path to a shell script sourced before running via commands. Use it to export Virtuoso, license, and other environment variables."
+        },
+        "via.environmentScriptShell": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "bash",
+            "sh",
+            "zsh",
+            "csh",
+            "tcsh"
+          ],
+          "default": "auto",
+          "description": "Shell used to source via.environmentScript. auto uses the user's default SHELL and loads its rc file when supported."
         },
         "via.knownWorkspaces": {
           "type": "array",
@@ -376,9 +395,25 @@
       }
     ]
   },
+  "files": [
+    "dist",
+    "bin",
+    "LICENSE",
+    "media/icon.png",
+    "media/qrcode.jpg",
+    "media/VIAWorkSpace.gif",
+    "media/RunningParagraph.gif",
+    "README.md",
+    "README.zh-CN.md",
+    "package.json"
+  ],
   "scripts": {
-    "vscode:prepublish": "npm run build",
-    "build": "tsc -p ./",
+    "vscode:prepublish": "npm run build:package",
+    "download:via": "node ./scripts/download-via.js",
+    "download:via:all-linux": "node ./scripts/download-via.js --all-linux",
+    "build": "npm run download:via && tsc -p ./",
+    "build:package": "npm run download:via:all-linux && tsc -p ./",
+    "package": "vsce package --no-dependencies",
     "watch": "tsc -watch -p ./",
     "lint": "tsc --noEmit -p ./",
     "test": "npm run lint"
@@ -387,12 +422,14 @@
     "via",
     "virtuoso",
     "skill",
-    "ic"
+    "ic",
+    "cadence"
   ],
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@types/vscode": "^1.85.0",
     "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^3.9.1",
     "typescript": "^5.8.3"
   }
 }

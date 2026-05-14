@@ -61,6 +61,7 @@ type MessageKey =
   | "label.display"
   | "label.enabled"
   | "label.error"
+  | "label.environmentScript"
   | "label.instance"
   | "label.lastCommand"
   | "label.lastSelectionMode"
@@ -123,10 +124,10 @@ type Messages = Record<MessageKey, string>;
 
 const messages: Record<"en" | "zh", Messages> = {
   en: {
-    "accessibility.statusLabel": "VIA Runner status",
+    "accessibility.statusLabel": "SKILL Runner status",
     "codelens.runFile": "Run File",
     "codelens.runParagraph": "Run Paragraph",
-    "config.languageDescription": "Language used by the VIA Runner runtime UI. auto follows the VS Code display language.",
+    "config.languageDescription": "Language used by the SKILL Runner runtime UI. auto follows the VS Code display language.",
     "display.current": "Current",
     "display.custom": "Use Custom DISPLAY",
     "display.customPrompt": "DISPLAY value used for via commands",
@@ -140,10 +141,10 @@ const messages: Record<"en" | "zh", Messages> = {
     "display.unsetDetail": "Run via commands without DISPLAY in the environment",
     "error.customDisplayRequired": "via.displayValue must be set when via.displayMode is custom.",
     "error.instanceNameRequired": "Instance name is required.",
-    "error.linuxOnly": "VIA Runner requires the extension host to run on Linux.",
+    "error.linuxOnly": "SKILL Runner requires the extension host to run on Linux.",
     "error.loadOnSaveFailed": "VIA load on save failed: {reason}",
     "error.mustSaveFile": "The file must be saved before running it with via.",
-    "error.onlyIlFiles": "VIA Runner only supports .il files.",
+    "error.onlyIlFiles": "SKILL Runner only supports .il files.",
     "error.openIlEditor": "Open a .il editor to run selected code.",
     "error.saveBeforeRun": "Save the .il file before running it with via.",
     "info.connectionStatusRefreshed": "VIA connection status refreshed.",
@@ -181,6 +182,7 @@ const messages: Record<"en" | "zh", Messages> = {
     "label.display": "DISPLAY",
     "label.enabled": "enabled",
     "label.error": "Error",
+    "label.environmentScript": "Environment Script",
     "label.instance": "Instance",
     "label.lastCommand": "Last Command",
     "label.lastSelectionMode": "Last Selection Mode",
@@ -230,7 +232,7 @@ const messages: Record<"en" | "zh", Messages> = {
     "status.menu.start.label": "Start Workspace",
     "status.menu.title": "VIA Status Bar",
     "status.tooltip.unconfigured": "Choose or create a via workspace.",
-    "statusBar.name": "VIA Runner Status",
+    "statusBar.name": "SKILL Runner Status",
     "title.instanceName": "VIA Instance Name",
     "title.statusDetails": "VIA Status Details",
     "title.workspaceAdvancedSettings": "Workspace Advanced Settings",
@@ -240,10 +242,10 @@ const messages: Record<"en" | "zh", Messages> = {
     "title.workspaceSelector": "Select VIA Workspace",
   },
   zh: {
-    "accessibility.statusLabel": "VIA Runner 状态",
+    "accessibility.statusLabel": "SKILL Runner 状态",
     "codelens.runFile": "运行文件",
     "codelens.runParagraph": "运行段落",
-    "config.languageDescription": "VIA Runner 运行时界面语言。auto 表示跟随 VS Code 显示语言。",
+    "config.languageDescription": "SKILL Runner 运行时界面语言。auto 表示跟随 VS Code 显示语言。",
     "display.current": "当前",
     "display.custom": "使用自定义 DISPLAY",
     "display.customPrompt": "via 命令使用的 DISPLAY 值",
@@ -257,10 +259,10 @@ const messages: Record<"en" | "zh", Messages> = {
     "display.unsetDetail": "执行 via 命令时不传入 DISPLAY 环境变量",
     "error.customDisplayRequired": "当 via.displayMode 为 custom 时，必须设置 via.displayValue。",
     "error.instanceNameRequired": "必须填写实例名。",
-    "error.linuxOnly": "VIA Runner 要求扩展宿主运行在 Linux 上。",
+    "error.linuxOnly": "SKILL Runner 要求扩展宿主运行在 Linux 上。",
     "error.loadOnSaveFailed": "保存时 VIA 加载失败：{reason}",
     "error.mustSaveFile": "运行前必须先保存该文件。",
-    "error.onlyIlFiles": "VIA Runner 仅支持 .il 文件。",
+    "error.onlyIlFiles": "SKILL Runner 仅支持 .il 文件。",
     "error.openIlEditor": "请先打开 .il 编辑器再运行选中的代码。",
     "error.saveBeforeRun": "使用 via 运行前请先保存 .il 文件。",
     "info.connectionStatusRefreshed": "VIA 连接状态已刷新。",
@@ -298,6 +300,7 @@ const messages: Record<"en" | "zh", Messages> = {
     "label.display": "DISPLAY",
     "label.enabled": "开启",
     "label.error": "错误",
+    "label.environmentScript": "环境变量脚本",
     "label.instance": "实例名",
     "label.lastCommand": "最近命令",
     "label.lastSelectionMode": "最近执行模式",
@@ -347,7 +350,7 @@ const messages: Record<"en" | "zh", Messages> = {
     "status.menu.start.label": "启动工作区",
     "status.menu.title": "VIA 状态栏",
     "status.tooltip.unconfigured": "请选择或新建一个 via 工作区。",
-    "statusBar.name": "VIA Runner 状态",
+    "statusBar.name": "SKILL Runner 状态",
     "title.instanceName": "VIA 实例名",
     "title.statusDetails": "VIA 状态详情",
     "title.workspaceAdvancedSettings": "工作区高级设置",

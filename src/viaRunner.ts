@@ -1,8 +1,8 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { EOL } from "node:os";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename as pathBasename, join } from "node:path";
 import { inspect, promisify } from "node:util";
 import * as vscode from "vscode";
 import { t } from "./i18n";
@@ -54,6 +54,7 @@ type StartDecisionItem = ActionQuickPickItem<"start-now" | "only-select">;
 type InstanceNameModeItem = ActionQuickPickItem<"default" | "custom">;
 
 type DisplayMode = "inherit" | "custom" | "unset";
+type EnvironmentScriptShell = "auto" | "bash" | "sh" | "zsh" | "csh" | "tcsh";
 type ConnectionState = "unconfigured" | "checking" | "running" | "stopped" | "error";
 
 const WORKSPACE_INSTANCE_NAME_KEY = "via.instanceName";
@@ -61,10 +62,11 @@ const WORKSPACE_PATH_KEY = "via.workspacePath";
 const KNOWN_WORKSPACES_STATE_KEY = "via.knownWorkspaces";
 const LEGACY_KNOWN_WORKSPACES_STATE_KEY = "via.knownKernels";
 const STATUS_BAR_ID = "via.status";
+const BUNDLED_VIA_RELATIVE_PATH = join("bin", `${process.platform}-${process.arch}`, process.platform === "win32" ? "via.exe" : "via");
 
 export class ViaRunner implements vscode.Disposable {
   private readonly statusBar = vscode.window.createStatusBarItem(STATUS_BAR_ID, vscode.StatusBarAlignment.Right, 10_000);
-  private readonly outputChannel = vscode.window.createOutputChannel("VIA Runner");
+  private readonly outputChannel = vscode.window.createOutputChannel("SKILL Runner");
   private activeExecutionTerminal: vscode.Terminal | undefined;
   private readonly suppressedLoadOnSaveUris = new Set<string>();
   private connectionState: ConnectionState = "unconfigured";
@@ -206,6 +208,13 @@ export class ViaRunner implements vscode.Disposable {
       {
         label: t("label.display"),
         detail: `${displayMode}: ${displayValue}`,
+      },
+      {
+        label: t("label.environmentScript"),
+        detail: formatEnvironmentScriptDetail(
+          (this.getConfig<string>("environmentScript") || "").trim(),
+          this.getEnvironmentScriptShell(),
+        ) || t("label.notConfigured"),
       },
       {
         label: t("label.autoStart"),
@@ -785,29 +794,30 @@ export class ViaRunner implements vscode.Disposable {
     cwd: string | undefined,
     options: ViaRunOptions,
   ): Promise<ViaCommandResult> {
-    const commandPath = this.getConfig<string>("commandPath") || "via";
-    this.lastCommandSummary = `${commandPath} ${args.join(" ")}`;
-    const env = this.buildViaEnv();
-    const terminal = options.revealInTerminal ? this.createExecutionTerminal(cwd, env, getViaInstanceName(args)) : undefined;
-    const shellQuotedCommand = formatShellCommand(commandPath, args);
+    const commandPath = await this.getViaCommandPath();
+    const env = await this.buildViaEnv();
+    const effectiveArgs = addNoGraphWhenDisplayIsUnavailable(args, env);
+    this.lastCommandSummary = `${commandPath} ${effectiveArgs.join(" ")}`;
+    const terminal = options.revealInTerminal ? this.createExecutionTerminal(cwd, env, getViaInstanceName(effectiveArgs)) : undefined;
+    const shellQuotedCommand = formatShellCommand(commandPath, effectiveArgs);
 
     try {
       terminal?.writeLine(`$ ${shellQuotedCommand}`);
-      const result = await execFileAsync(commandPath, args, {
+      const result = await execFileAsync(commandPath, effectiveArgs, {
         cwd,
         env,
         encoding: "utf8",
         maxBuffer: 1024 * 1024 * 8,
       });
-      this.writeOutputChannelCommand(shellQuotedCommand, cwd, env, args, result.stdout, result.stderr, 0);
+      this.writeOutputChannelCommand(shellQuotedCommand, cwd, env, effectiveArgs, result.stdout, result.stderr, 0);
 
       if (terminal) {
-        this.writeTerminalOutput(terminal, args, result.stdout, result.stderr);
+        this.writeTerminalOutput(terminal, effectiveArgs, result.stdout, result.stderr);
         terminal.writeLine("");
         terminal.writeLine("[exit 0]");
         terminal.markComplete();
       }
-      if (args[0] === "start" || args[0] === "send") {
+      if (effectiveArgs[0] === "start" || effectiveArgs[0] === "send") {
         this.knownRunningState = true;
       }
       return {
@@ -820,10 +830,10 @@ export class ViaRunner implements vscode.Disposable {
       const stdout = failure.stdout || "";
       const stderr = failure.stderr || "";
       const exitCode = typeof failure.code === "number" ? failure.code : 1;
-      const alreadyRunning = args[0] === "start" && isAlreadyRunningMessage(stderr, stdout);
-      this.writeOutputChannelCommand(shellQuotedCommand, cwd, env, args, stdout, stderr, alreadyRunning ? 0 : exitCode);
+      const alreadyRunning = effectiveArgs[0] === "start" && isAlreadyRunningMessage(stderr, stdout);
+      this.writeOutputChannelCommand(shellQuotedCommand, cwd, env, effectiveArgs, stdout, stderr, alreadyRunning ? 0 : exitCode);
       if (terminal) {
-        this.writeTerminalOutput(terminal, args, stdout, stderr);
+        this.writeTerminalOutput(terminal, effectiveArgs, stdout, stderr);
         terminal.writeLine("");
         terminal.writeLine(`[exit ${alreadyRunning ? 0 : exitCode}]`);
         terminal.markComplete();
@@ -836,7 +846,7 @@ export class ViaRunner implements vscode.Disposable {
           exitCode: 0,
         };
       }
-      if (args[0] === "send" || args[0] === "start") {
+      if (effectiveArgs[0] === "send" || effectiveArgs[0] === "start") {
         this.knownRunningState = false;
         this.connectionState = "error";
         this.connectionDetail = toErrorMessage(error);
@@ -887,7 +897,7 @@ export class ViaRunner implements vscode.Disposable {
   ): TerminalSession {
     this.activeExecutionTerminal?.dispose();
 
-    const terminalName = instanceName ? `VIA Runner: ${instanceName}` : "VIA Runner";
+    const terminalName = instanceName ? `SKILL Runner: ${instanceName}` : "SKILL Runner";
     const session = new TerminalSession(terminalName, cwd, env);
     const terminal = vscode.window.createTerminal({
       name: terminalName,
@@ -924,7 +934,7 @@ export class ViaRunner implements vscode.Disposable {
     stderr: string,
     exitCode: number,
   ): void {
-    this.outputChannel.appendLine("VIA Runner");
+    this.outputChannel.appendLine("SKILL Runner");
     if (cwd) {
       this.outputChannel.appendLine(`cwd: ${cwd}`);
     }
@@ -1123,9 +1133,9 @@ export class ViaRunner implements vscode.Disposable {
     }
   }
 
-  private buildViaEnv(): NodeJS.ProcessEnv {
-    const env: NodeJS.ProcessEnv = { ...process.env };
-    const displayMode = this.getDisplayMode();
+  private async buildViaEnv(): Promise<NodeJS.ProcessEnv> {
+    const env: NodeJS.ProcessEnv = await this.buildBaseViaEnv();
+    const displayMode = this.getDisplayMode(env);
 
     if (displayMode === "unset") {
       delete env.DISPLAY;
@@ -1145,9 +1155,52 @@ export class ViaRunner implements vscode.Disposable {
     return env;
   }
 
-  private getDisplayMode(): DisplayMode {
+  private async buildBaseViaEnv(): Promise<NodeJS.ProcessEnv> {
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    const envScript = (this.getConfig<string>("environmentScript") || "").trim();
+    if (!envScript) {
+      return env;
+    }
+
+    return {
+      ...env,
+      ...await this.loadEnvironmentScript(envScript, env),
+    };
+  }
+
+  private async loadEnvironmentScript(scriptPath: string, baseEnv: NodeJS.ProcessEnv): Promise<NodeJS.ProcessEnv> {
+    await access(scriptPath);
+    const shell = resolveEnvironmentScriptShell(this.getEnvironmentScriptShell(), baseEnv);
+    const command = getEnvironmentScriptCommand(shell, scriptPath);
+    const result = await execFileAsync(shell, getEnvironmentScriptShellArgs(shell, command), {
+      env: baseEnv,
+      encoding: "buffer",
+      maxBuffer: 1024 * 1024 * 8,
+    });
+    return parseNullSeparatedEnv(result.stdout);
+  }
+
+  private getEnvironmentScriptShell(): EnvironmentScriptShell {
+    const configured = this.getConfig<string>("environmentScriptShell");
+    if (
+      configured === "bash"
+      || configured === "sh"
+      || configured === "zsh"
+      || configured === "csh"
+      || configured === "tcsh"
+    ) {
+      return configured;
+    }
+
+    return "auto";
+  }
+
+  private getDisplayMode(env: NodeJS.ProcessEnv = process.env): DisplayMode {
     const configured = this.getConfig<string>("displayMode");
     if (configured === "inherit" || configured === "custom" || configured === "unset") {
+      if (configured === "inherit" && !env.DISPLAY && !(this.getConfig<string>("displayValue") || "").trim()) {
+        return "unset";
+      }
       return configured;
     }
 
@@ -1156,7 +1209,7 @@ export class ViaRunner implements vscode.Disposable {
       return "unset";
     }
 
-    return "inherit";
+    return env.DISPLAY ? "inherit" : "unset";
   }
 
   private async updateWorkspaceSetting<T>(key: string, value: T): Promise<void> {
@@ -1179,12 +1232,12 @@ export class ViaRunner implements vscode.Disposable {
   }
 
   private async listWorkspacesSilently(): Promise<ListedWorkspace[]> {
-    const commandPath = this.getConfig<string>("commandPath") || "via";
     const args = ["list", "--prune"];
-    const env = this.buildViaEnv();
-    const shellQuotedCommand = formatShellCommand(commandPath, args);
+    const env = await this.buildViaEnv();
 
     try {
+      const commandPath = await this.getViaCommandPath();
+      const shellQuotedCommand = formatShellCommand(commandPath, args);
       const result = await execFileAsync(commandPath, args, {
         env,
         encoding: "utf8",
@@ -1197,7 +1250,9 @@ export class ViaRunner implements vscode.Disposable {
       const stdout = failure.stdout || "";
       const stderr = failure.stderr || "";
       const exitCode = typeof failure.code === "number" ? failure.code : 1;
-      this.writeOutputChannelCommand(shellQuotedCommand, undefined, env, args, stdout, stderr, exitCode);
+      const configured = (this.getConfig<string>("commandPath") || "").trim();
+      const shellQuotedCommand = formatShellCommand(configured || this.context.asAbsolutePath(BUNDLED_VIA_RELATIVE_PATH), args);
+      this.writeOutputChannelCommand(shellQuotedCommand, undefined, env, args, stdout, stderr || toErrorMessage(error), exitCode);
       return [];
     }
   }
@@ -1207,6 +1262,21 @@ export class ViaRunner implements vscode.Disposable {
     this.connectionState = isRunning ? "running" : "stopped";
     this.connectionDetail = detail;
     this.updateStatusBar();
+  }
+
+  private async getViaCommandPath(): Promise<string> {
+    const configured = (this.getConfig<string>("commandPath") || "").trim();
+    if (configured) {
+      return configured;
+    }
+
+    const bundledPath = this.context.asAbsolutePath(BUNDLED_VIA_RELATIVE_PATH);
+    try {
+      await access(bundledPath);
+    } catch {
+      throw new Error(`Bundled via executable was not found at ${bundledPath}. Run npm run build to download it, or set via.commandPath to a custom via executable.`);
+    }
+    return bundledPath;
   }
 }
 
@@ -1615,6 +1685,14 @@ function isAlreadyRunningMessage(...chunks: string[]): boolean {
   return chunks.some((chunk) => /already running/i.test(chunk));
 }
 
+function addNoGraphWhenDisplayIsUnavailable(args: string[], env: NodeJS.ProcessEnv): string[] {
+  if (args[0] !== "start" || env.DISPLAY || args.includes("--nograph")) {
+    return args;
+  }
+
+  return [...args, "--nograph"];
+}
+
 function formatShellCommand(commandPath: string, args: string[]): string {
   return [commandPath, ...args].map(shellQuote).join(" ");
 }
@@ -1634,6 +1712,81 @@ function shellQuote(value: string): string {
   }
 
   return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+function resolveEnvironmentScriptShell(shell: EnvironmentScriptShell, env: NodeJS.ProcessEnv): Exclude<EnvironmentScriptShell, "auto"> {
+  if (shell !== "auto") {
+    return shell;
+  }
+
+  const userShell = pathBasename(env.SHELL || "").toLowerCase();
+  if (userShell === "csh") {
+    return "csh";
+  }
+  if (userShell === "tcsh") {
+    return "tcsh";
+  }
+  if (userShell === "zsh") {
+    return "zsh";
+  }
+  if (userShell === "sh") {
+    return "sh";
+  }
+  if (userShell === "bash") {
+    return "bash";
+  }
+
+  return "bash";
+}
+
+function getEnvironmentScriptCommand(shell: Exclude<EnvironmentScriptShell, "auto">, scriptPath: string): string {
+  const quotedScriptPath = shellQuote(scriptPath);
+  if (shell === "csh" || shell === "tcsh") {
+    return `if ( -f ~/.cshrc ) source ~/.cshrc; source ${quotedScriptPath}; env -0`;
+  }
+
+  if (shell === "zsh") {
+    return `set -a; [ -f ~/.zshrc ] && source ~/.zshrc >/dev/null; source ${quotedScriptPath} >/dev/null; env -0`;
+  }
+
+  if (shell === "bash") {
+    return `set -a; [ -f ~/.bashrc ] && source ~/.bashrc >/dev/null; source ${quotedScriptPath} >/dev/null; env -0`;
+  }
+
+  return `set -a; source ${quotedScriptPath} >/dev/null; env -0`;
+}
+
+function getEnvironmentScriptShellArgs(shell: Exclude<EnvironmentScriptShell, "auto">, command: string): string[] {
+  if (shell === "csh" || shell === "tcsh") {
+    return ["-fc", command];
+  }
+
+  return ["-lc", command];
+}
+
+function formatEnvironmentScriptDetail(scriptPath: string, shell: EnvironmentScriptShell): string {
+  if (!scriptPath) {
+    return "";
+  }
+
+  return `${scriptPath} (${shell})`;
+}
+
+function parseNullSeparatedEnv(buffer: Buffer): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const entry of buffer.toString("utf8").split("\0")) {
+    if (!entry) {
+      continue;
+    }
+
+    const separatorIndex = entry.indexOf("=");
+    if (separatorIndex <= 0) {
+      continue;
+    }
+
+    env[entry.slice(0, separatorIndex)] = entry.slice(separatorIndex + 1);
+  }
+  return env;
 }
 
 function normalizeTerminalText(content: string): string {
