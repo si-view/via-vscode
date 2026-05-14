@@ -50,9 +50,9 @@ The VIA status bar item shows the current connection state. Click it to refresh 
 
 Use a VNC-backed DISPLAY when Virtuoso needs a GUI on a remote Linux host.
 
-<video src="https://raw.githubusercontent.com/si-view/via-vscode/master/media/VNCDisplay.mp4" controls title="Start SKILL Runner with a VNC display"></video>
-
-[Open the VNC display demo](https://raw.githubusercontent.com/si-view/via-vscode/master/media/VNCDisplay.mp4)
+<video controls title="Start SKILL Runner with a VNC display">
+  <source src="https://raw.githubusercontent.com/si-view/via-vscode/master/media/VNCDisplay.mp4" type="video/mp4">
+</video>
 
 ## Commands
 
