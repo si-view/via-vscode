@@ -46,11 +46,17 @@ The VIA status bar item shows the current connection state. Click it to refresh 
 
 ### Workspace Setup
 
-![Select and start a VIA workspace](./media/VIAWorkSpace.gif)
+![Select and start a VIA workspace](https://raw.githubusercontent.com/si-view/via-vscode/master/media/VIAWorkSpace.gif)
 
 ### Run Paragraph
 
-![Run the current SKILL paragraph](./media/RunningParagraph.gif)
+![Run the current SKILL paragraph](https://raw.githubusercontent.com/si-view/via-vscode/master/media/RunningParagraph.gif)
+
+### Load On Save
+
+Enable `via.loadOnSave` to load saved `.il` files automatically.
+
+![Enable load on save](https://raw.githubusercontent.com/si-view/via-vscode/master/media/LoadOnSave.png)
 
 ### Start with VNC Display
 
@@ -203,7 +209,7 @@ VIA_SKIP_DOWNLOAD=1 npm run build
 
 Follow the WeChat official account "芯上视图" for updates:
 
-![芯上视图 WeChat QR code](./media/qrcode.jpg)
+![芯上视图 WeChat QR code](https://raw.githubusercontent.com/si-view/via-vscode/master/media/qrcode.jpg)
 
 ## Repository
 
