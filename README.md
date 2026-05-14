@@ -1,4 +1,4 @@
-# SKILL Runner
+# SKILL Runner - Via
 
 [English](./README.md) | [简体中文](./README.zh-CN.md)
 
@@ -45,6 +45,14 @@ The VIA status bar item shows the current connection state. Click it to refresh 
 ### Run Paragraph
 
 ![Run the current SKILL paragraph](./media/RunningParagraph.gif)
+
+### Start with VNC Display
+
+Use a VNC-backed DISPLAY when Virtuoso needs a GUI on a remote Linux host.
+
+<video src="https://raw.githubusercontent.com/si-view/via-vscode/master/media/VNCDisplay.mp4" controls title="Start SKILL Runner with a VNC display"></video>
+
+[Open the VNC display demo](https://raw.githubusercontent.com/si-view/via-vscode/master/media/VNCDisplay.mp4)
 
 ## Commands
 

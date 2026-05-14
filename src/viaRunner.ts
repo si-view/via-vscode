@@ -1070,9 +1070,23 @@ export class ViaRunner implements vscode.Disposable {
       return;
     }
 
-    await this.runVia(["kill", session.instanceName], session.workspacePath || undefined, { revealInTerminal: false });
-    await this.refreshConnectionState(true);
+    const wasCurrentSession = isSameWorkspaceSelection(this.readWorkspaceSelection(), session);
+    await this.runVia(["kill", session.instanceName, "--force"], session.workspacePath || undefined, { revealInTerminal: false });
+    if (wasCurrentSession) {
+      await this.clearCurrentWorkspace();
+    } else {
+      await this.refreshConnectionState(true);
+    }
     void vscode.window.showInformationMessage(t("session.killed", { name: session.instanceName }));
+  }
+
+  private async clearCurrentWorkspace(): Promise<void> {
+    await this.context.workspaceState.update(WORKSPACE_INSTANCE_NAME_KEY, undefined);
+    await this.context.workspaceState.update(WORKSPACE_PATH_KEY, undefined);
+    this.knownRunningState = false;
+    this.connectionState = "unconfigured";
+    this.connectionDetail = "";
+    this.updateStatusBar();
   }
 
   private async configureDisplaySettings(): Promise<void> {
